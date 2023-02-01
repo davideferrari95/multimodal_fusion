@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="fusion" type="voce_node.py" name="voce_node.py" output="screen"/>
+
+</launch>

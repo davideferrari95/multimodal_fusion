@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="fusion" type="gesto_node.py" name="gesto_node.py" output="screen"/>
+
+</launch>
