@@ -12,7 +12,7 @@ from Rete_neurale import LitNeuralNet
     
 
 
-class Classificator():
+class Classificator:
 
     voce_ricevuto = False
     gesto_ricevuto = False
