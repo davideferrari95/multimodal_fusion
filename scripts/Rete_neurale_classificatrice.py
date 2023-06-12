@@ -12,40 +12,40 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 # Hyper-parameters 
-input_size = 6              #Vettori comandi concatenati 
-hidden_size1 = 32           #Numero neuroni primo strato 
-hidden_size2 = 64           #Numero neuroni secondo strato 
-output_size = 9             #Numero possibili comandi 
-num_epochs = 100              
-learning_rate = 0.4
-train_percent=0.7
-val_percent=0.15
-test_percent=0.15
+input_size = 2       
+hidden_size1 = 32        
+hidden_size2 = 64      
+output_size = 35
+num_epochs = 1500              
+learning_rate = 0.004
+train_percent=0.8
+val_percent=0.1
+test_percent=0.1
 
-
+#Class to use a CSV file as a dataset 
 class CSVDataset(Dataset):
     def __init__(self):
+
         # Initialize data, download, etc.
-        # read with numpy or pandas
-        df = pd.read_csv("comandifusi.csv",delimiter=',',skiprows= 1)
+        df = pd.read_csv("/home/alberto/catkin_ws/src/fusion/dataset/fusion_dataset.csv",delimiter=',',skiprows= 1)
+
         self.n_samples = df.shape[0]
-        # here the first column is the class label, the rest are the features
+
         self.x_data = torch.from_numpy(df.iloc[:, 1:].values).float()# size [n_samples, n_features]
         self.y_data = torch.from_numpy(df.iloc[:, 0].values).long() # size [n_samples, 1]
     
-    # we can call len(dataset) to return the size
     def __len__(self):
         return self.n_samples
-    # support indexing such that dataset[i] can be used to get i-th sample
+    
     def __getitem__(self, index):
         return self.x_data[index], self.y_data[index]
 
-    
 
-# Definiamo il modello della nostra rete neurale
 class LitNeuralNet(pl.LightningModule):
+
     def __init__(self, train_percent: float, val_percent: float, test_percent: float, input_size, hidden_size1, hidden_size2,output_size, transform=None):
         super(LitNeuralNet, self).__init__()
+
         #Definiamo gi strati della rete neurale 
         self.fc1 = nn.Linear(input_size, hidden_size1)
         self.fc2 = nn.Linear(hidden_size1, hidden_size2)
@@ -58,6 +58,7 @@ class LitNeuralNet(pl.LightningModule):
         self.transform = transform
     
     def setup(self, stage: str):
+
         # Carica i dati dal file CSV e li divide in set di addestramento, validazione e test in base alle percentuali specificate
         dataset = CSVDataset()
         num_train = int(len(dataset) * self.train_percent)
@@ -69,19 +70,21 @@ class LitNeuralNet(pl.LightningModule):
        
 
     def forward(self, x):
+
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr = learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr = learning_rate)
         return optimizer
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
         loss = F.cross_entropy(y_pred, y)
+        self.log("train_loss", loss)
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
@@ -116,15 +119,18 @@ def train():
         max_epochs = num_epochs, 
         fast_dev_run = False, 
         log_every_n_steps=10, 
-        callbacks=[EarlyStopping(monitor="val_loss", stopping_threshold = 0.1)])    
+        callbacks=[EarlyStopping(monitor="train_loss", patience = 100, mode = "min", min_delta = 0.01)]
+         )    
     model = LitNeuralNet(train_percent, val_percent, test_percent, input_size, hidden_size1, hidden_size2, output_size)
+    # compiled_model = torch.compile(model)
     trainer.fit(model)
     #trainer.logger = False
 
-    FILE = "Rete_allenata.pth"
+    FILE = "/home/alberto/catkin_ws/src/fusion/model/fusion_model.pth"
     torch.save(model.state_dict(), FILE)
 
 
 if __name__ == '__main__':
+
     train()
     print("Done! (Speramm a crist)")

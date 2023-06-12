@@ -1,5 +1,0 @@
-<launch>
-
-    <node pkg="fusion" type="classificatore_NN.py" name="classificatore_NN" output="screen"/>
-
-</launch>

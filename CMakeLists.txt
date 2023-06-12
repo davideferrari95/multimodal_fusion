@@ -13,11 +13,6 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
 )
 
-
-  
-#find_package(pytorch_lighting REQUIRED)
-#find_package(torch REQUIRED)
-
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -73,9 +68,9 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
- #generate_messages(
-   #DEPENDENCIES
-   #std_msgs
+# generate_messages(
+#   DEPENDENCIES
+#   std_msgs
 # )
 
 ################################################
@@ -108,15 +103,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-   INCLUDE_DIRS
-   # include
+#  INCLUDE_DIRS include
 #  LIBRARIES fusion
-   CATKIN_DEPENDS 
-   roscpp 
-   rospy 
-   std_msgs 
-  
-
+#  CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
 
@@ -130,10 +119,6 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
-#include_directories(
-#  ${TORCH_INCLUDE_DIRS}
-#  ${pytorch_lighting_INCLUDE_DIRS}
-#)
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -164,16 +149,6 @@ include_directories(
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
-
-#target_link_libraries(classificatore_node ${catkin_LIBRARIES})
-#target_link_libraries(gesto_node ${catkin_LIBRARIES})
-#target_link_libraries(voce_node ${catkin_LIBRARIES})
-#
-#target_link_libraries(classificatore_node ${pytorch_lighting_LIBRARIES})
-#target_link_libraries(classificatore_node ${TORCH_LIBRARIES})
-
-
-
 
 #############
 ## Install ##
@@ -216,19 +191,6 @@ include_directories(
 #   # myfile2
 #   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
-
-install(PROGRAMS 
-  scripts/gesto_node.py                       #Nodo che simula il vettore gesto
-  scripts/voce_node.py                        #Nodo che simula il vettore voce
-
-  scripts/classificatore_con_time.py          #Nodo che combina con il time manager 
-  scripts/classificatore_NN_con_time.py       #Nodo che combina con il time manager e la rete neurale 
-  scripts/classificatore_NN.py                #Nodo che combina con solo la rete neurale 
-
-  scripts/Rete_neurale.py                     #Rete neurale che crea e salva il modello con i pesi allenati
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
 
 #############
 ## Testing ##
