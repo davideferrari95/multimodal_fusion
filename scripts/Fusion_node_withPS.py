@@ -1,163 +1,78 @@
 #!/usr/bin/env python3
 
-import rospy
-from std_msgs.msg import Int32MultiArray, String, Bool 
-import datetime 
+import rospy, rospkg
+import os, threading, time
 import torch
-from Rete_neurale_classificatrice import LitNeuralNet
-import threading, time
+
+from typing import List
+from collections import Counter
+
+# Import ROS Messages
 from geometry_msgs.msg import Pose
-#from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Int32MultiArray, String, Bool 
 from trajectory_msgs.msg import JointTrajectoryPoint
 from ur_rtde_controller.msg import CartesianPoint
-from ur_rtde_controller.srv import RobotiQGripperControl, RobotiQGripperControlRequest
-from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicRequest
-from collections import Counter
+
+# Import ROS Services
 from std_srvs.srv import Trigger, TriggerRequest 
+from ur_rtde_controller.srv import RobotiQGripperControl, RobotiQGripperControlRequest
+from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicRequest, GetForwardKinematicResponse
+from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicRequest, GetInverseKinematicResponse
 
+from neural_classifier import LitNeuralNet
+from utils import OBJECTS, RIGHT_AREA, LEFT_AREA
+from utils import defaultPos, placePos, intermediatePos
 
-
-class Classificator:
+class Fusion:
 
     def __init__(self):
 
+        # Init ROS Node
+        rospy.init_node('multimodal_fusion', anonymous=True)
 
-        # Inizializzazione del nodo
-        rospy.init_node('classificatore', anonymous=True)
+        # Get Package Path
+        package_path = rospkg.RosPack().get_path('fusion')
 
-        #init variabili
-        self.gripper_aperto = 100
-        self.gripper_chiuso = 0
-        self.gripper_70 = 70
+        # Publishers
+        # self.ur10Pub=rospy.Publisher('/ur_rtde/controllers/joint_space_controller/command',JointTrajectoryPoint,queue_size=10)
+        # self.ur10PubCartesian=rospy.Publisher('/ur_rtde/controllers/cartesian_space_controller/command',CartesianPoint,queue_size=10)
+        self.ur10Pub=rospy.Publisher('/desired_joint_pose', JointState, queue_size=1)
+        # self.ur10PubCartesian=rospy.Publisher('/desired_tcp_pose', Pose, queue_size=1)
+        self.ttsPub = rospy.Publisher('/tts',String,queue_size=1)
 
-        self.defaultPos=[2.531209945678711, -1.8816501102843226, 1.7585914770709437, -1.4168628019145508, 4.700905799865723, 0.7452919483184814]
-        self.placePos=[1.4981036186218262, -1.8520351848998011, 2.422215286885397, -2.14617981533193, 4.746311187744141, -0.03622609773744756]
-        self.intermediatePos = [2.8941173553466797, -1.249845342045166, 1.0492914358722132, -1.3367853921702881, 4.713375091552734, 1.1106750965118408]
-
-        self.oggetti={
-            
-            "il sale grosso":[
-            [2.5016584396362305, -0.8632076543620606, 1.2751339117633265, -1.963386674920553, 4.741418838500977, 0.9712827205657959],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ],
-
-            "il sale iodato":[
-            [3.387843608856201, -1.0682671827128907, 1.6490314642535608, -2.1364666424193324, 4.772143363952637, 1.8173348903656006],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ],
-
-            "il bicchiere bianco":[
-            [2.3846733570098877, -1.0724294942668458, 1.6509855429278772, -2.178251882592672, 4.730436325073242, 0.85353684425354],
-            self.gripper_chiuso,
-            self.gripper_aperto,
-            ],
-
-            "la passata":[
-            [2.3381829261779785, -0.8568876546672364, 1.3088882605182093, -2.0508209667601527, 4.731287956237793, 0.8080871105194092],
-            self.gripper_chiuso,
-            self.gripper_aperto,
-            ], 
-
-            "il coltello":[
-            [2.2267518043518066, -1.1784547132304688, 2.059087578450338, -2.477241178552145, 4.735124588012695, 0.6946213245391846],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ], 
-
-            "la forchetta di legno":[
-            [2.293628692626953, -1.0718673032573243, 1.85292894044985, -2.3308073482909144, 4.7392730712890625, -0.8873665968524378],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ], 
-
-            "le pennette":[
-            [2.1489624977111816, -1.074343041782715, 1.6118515173541468, -2.0838972530760707, 4.7358078956604, -1.0315120855914515],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ], 
-
-            "la forchetta di plastica":[
-            [3.3018717765808105, -1.2413643163493653, 2.0898597876178187, -2.3902908764281214, 4.729753017425537, -1.270754639302389],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ], 
-
-            "i pelati":[
-            [3.3865585327148438, -1.4877928060344239, 2.2749279181109827, -2.3304363689818324, 4.7321391105651855, -1.1869919935809534],
-            self.gripper_chiuso,
-            self.gripper_aperto,
-            ], 
-
-            "il bicchiere trasparente":[
-            [3.4324843883514404, -1.2404654783061524, 1.9565780798541468, -2.2602154217162074, 4.73328971862793, -1.139892880116598],
-            self.gripper_chiuso,
-            self.gripper_aperto,
-            ],
-
-            "gli spaghetti":[
-            [3.595914840698242, -1.1588075918010254, 1.9754837195025843, -2.4072934589781703, 4.74080753326416, 0.44310879707336426],
-            self.gripper_aperto,
-            self.gripper_chiuso,
-            ]
-                    }
-    
-        self.area_destra = {
-
-            "la passata": 11,
-            "il sale grosso": 21, 
-            "il bicchiere bianco": 61,
-            "le pennette": 31,
-            "il coltello": 51,
-            "la forchetta di legno": 41,
-        }
-
-        self.area_sinistra = {
-
-            "il sale iodato": 22,
-            "il bicchiere trasparente": 62,
-            "gli spaghetti": 32,
-            "la forchetta di plastica": 42,
-            "i pelati": 12, 
-            
-        }
-
-        #init oggetto posizione in giunti(se time_from_start=0 allora si muove in velocità)
-        self.destinationPos=JointTrajectoryPoint()
-        self.destinationPos.time_from_start = rospy.Duration(0)
-        self.destinationPos.velocities = [0.4]
-
-        #Publisher per i movimenti in posa e in cartesiano 
-        self.ur10Pub=rospy.Publisher('/ur_rtde/controllers/joint_space_controller/command',JointTrajectoryPoint,queue_size=10)
-        self.ur10PubCartesian=rospy.Publisher('/ur_rtde/controllers/cartesian_space_controller/command',CartesianPoint,queue_size=10)
-
-        #init service per il gripper
+        # Init Gripper Service
         self.gripper_srv = rospy.ServiceProxy('/ur_rtde/robotiq_gripper/command', RobotiQGripperControl)
-        self.gripper_req = RobotiQGripperControlRequest()
 
-        #init service per cinematica inversa 
-        self.cartesian_srv = rospy.ServiceProxy('ur_rtde/getFK', GetForwardKinematic)
+        # IK, FK Services
+        self.get_FK_srv = rospy.ServiceProxy('ur_rtde/getFK', GetForwardKinematic)
+        self.get_IK_srv = rospy.ServiceProxy('ur_rtde/getIK', GetInverseKinematic)
 
+        # Stop Robot Service
         self.stop_service = rospy.ServiceProxy('/ur_rtde/controllers/stop_robot', Trigger)
         self.stop_req = TriggerRequest()
 
-        # Inizializzazione dei topic
-        rospy.Subscriber("voice", Int32MultiArray, self.voiceCallback)
+        # Subscribers
+        rospy.Subscriber("voice",   Int32MultiArray, self.voiceCallback)
         rospy.Subscriber("gesture", Int32MultiArray, self.gestureCallback)
-        rospy.Subscriber("area",Int32MultiArray, self.areaCallback)
-        self.ttsPub = rospy.Publisher('/tts',String,queue_size=1)
+        rospy.Subscriber("area",    Int32MultiArray, self.areaCallback)
 
-        # TODO: cambia path
         # init network
         self.model = LitNeuralNet(0.8,0.1,0.1,2,32,64,35)
-        state_dict = torch.load(r"/home/davide/ROS/niryo_ws/src/Multimodal Fusion/fusion/model/fusion_model.pth")
+        state_dict = torch.load(os.path.join(package_path, 'model/fusion_model.pth'))
         self.model.load_state_dict(state_dict)
         self.model.eval()
 
-        # Apri thread finestra temporale e recognition
-        self.my_thread = MyThread()
+        # Init Thread -> Temporal Window, Recognition
+        self.temporal_window_thread = MyThread()
         self.recognition_thread = MyThread()
+
+        # Init Variables
+        self.init_variables()
+
+        rospy.logwarn('Multimodal Fusion Initialized')
+
+    def init_variables(self):
 
         self.voiceCheck = False
         self.gestureCheck = False
@@ -184,161 +99,179 @@ class Classificator:
         self.thread_paused = False
         self.recognition_thread_active = False
 
-    def voiceCallback(self,data):
+    def voiceCallback(self, data:Int32MultiArray):
 
-       self.voice_msg = data.data 
-       #self.voice_time_stamp = datetime.datetime.now()
-       print("\nComando vocale {} ricevuto".format(self.voice_msg))
-       self.voiceCheck = True
+        # Save Voice Message
+        self.voice_msg = data.data
+        #self.voice_time_stamp = datetime.datetime.now()
+        rospy.logwarn(f"Received Voice Command: {self.voice_msg}")
 
-    def gestureCallback(self, data):
+        # Set Voice Message Flag
+        self.voiceCheck = True
 
-       self.gesture_msg = data.data 
-       #self.gesture_time_stamp = datetime.datetime.now()
-       #print("\nComando gestuale: {} ricevuto".format(self.gesture_msg))
+    def gestureCallback(self, data:Int32MultiArray):
 
-       if self.recognition_thread_active == False:
+        # Save Gesture Message
+        self.gesture_msg = data.data
+        #self.gesture_time_stamp = datetime.datetime.now()
+        # rospy.logwarn(f"Received Gesture Command: {self.gesture_msg}")
 
-        self.recognition_thread_active = True
-        self.recognition_thread = MyThread()
-        self.recognition_thread.start()
-        print("Riconoscimento Partito")
+        # Open Recognition Thread
+        if self.recognition_thread_active == False:
 
-       if self.gesture_vector is None: self.gesture_vector = self.gesture_msg  #Se è monodimensionale, sostituisci
-       else: self.gesture_vector = self.gesture_vector + self.gesture_msg     #Se è più grande appendi
+            self.recognition_thread_active = True
+            self.recognition_thread = MyThread()
+            self.recognition_thread.start()
+            rospy.loginfo("Gesture Recognition Started")
 
-    def areaCallback(self, data):
+        # If Mono-dimensional: Overwrite | else: Append
+        if self.gesture_vector is None: self.gesture_vector = self.gesture_msg
+        else: self.gesture_vector = self.gesture_vector + self.gesture_msg
 
+    def areaCallback(self, data:Int32MultiArray):
+
+        # Save Area Message
         self.area_msg = data.data 
-        # print("\nArea: {} ricevuto".format(self.area_msg))
+        # rospy.logwarn(f"Received Area Command: {self.area_msg}")
+
+        # Set Area Flag
         self.areaCheck = True
 
-    #function for close/open gripper
-    def gripping(self,position):
+    def move_joint(self, joint_positions:List[float]):
 
-        # self.gripper_req.position, self.gripper_req.speed, self.gripper_req.force = 100, 100, 25
-        self.gripper_req.position = position
+        """ Joint Space Movement """
+
+        # Destination Position (if `time_from_start` = 0 -> read velocity[0])
+        pos = JointState()
+        pos.position = joint_positions
+
+        # pos = JointTrajectoryPoint()
+        # pos.time_from_start = rospy.Duration(0)
+        # pos.velocities = [0.4]
+        
+        # Publish Joint Position
+        self.ur10Pub.publish(pos)
+
+        # flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
+        flag = rospy.wait_for_message('/trajectory_execution', Bool)
+
+        # Exception with Trajectory Execution
+        if flag.data is not True: raise Exception("ERROR: An exception occurred during Trajectory Execution")
+
+    def move_cartesian(self, tcp_position:Pose):
+
+        """ Cartesian Movement -> Converted in Joint Movement with IK """
+
+        # Call Inverse Kinematic
+        joint_position = self.IK(tcp_position)
+
+        # Joint Space Movement
+        self.move_joint(joint_position)
+
+    def FK(self, joint_positions:List[float]) -> Pose:
+
+        # Set Forward Kinematic Request
+        req = GetForwardKinematicRequest()
+        req.joint_position = joint_positions
+
+        # Call Forward Kinematic
+        rospy.wait_for_service('ur_rtde/getFK')
+        res: GetForwardKinematicResponse = self.get_FK_srv(req)
+
+        return res.tcp_position
+    
+    def IK(self, pose:Pose) -> List[float]:
+
+        # Set Inverse Kinematic Request
+        req = GetInverseKinematicRequest()
+        req.tcp_position = pose
+
+        # Call Inverse Kinematic
+        rospy.wait_for_service('ur_rtde/getIK')
+        res: GetInverseKinematicResponse = self.get_IK_srv(req)
+
+        return res.joint_position
+
+    def move_gripper(self, position):
+
+        """ Open-Close Gripper Function """
+
+        # Set Gripper Request
+        req = RobotiQGripperControlRequest()
+        req.position, req.speed, req.force = position, 100, 25
+
+        # Call Gripper Service
         rospy.wait_for_service('/ur_rtde/robotiq_gripper/command')
-        self.gripper_response = self.gripper_srv(self.gripper_req)
+        res = self.gripper_srv(req)
+
         '''if gripper_response.status != "2":
         raise Exception("Sorry, An exception occurred")'''
 
-    def handover(self,tt_inziale,position,start_grip, end_grip, tts_finale):
+    def handover(self, tts_start, position, start_grip, end_grip, tts_end):
 
-        #pubblico il messaggio vocale
-        self.ttsPub.publish(tt_inziale)
+        # Node-RED Start TTS
+        self.ttsPub.publish(tts_start)
 
-        #posizione iniziale (aperto o chiuso in modo da gripp interno o esterno)
-        self.gripping(start_grip)
+        # Move Gripper to Starting Position (Open/Close for Internal/External Gripping)
+        self.move_gripper(start_grip)
 
-        #vado a mettermi in una posizione centrale
-        self.intermidatePosition()
+        # Move to Intermediate Position
+        self.move_joint(intermediatePos)
 
-        #chiamata servise cinemarica inversa per andare sopra l'oggetto
-        cartesian_req= GetForwardKinematicRequest()
-        cartesian_req.joint_position=position
-        rospy.wait_for_service('ur_rtde/getFK')
-        cartesian_response = self.cartesian_srv(cartesian_req)
-        print(cartesian_response)
+        # Forward Kinematic -> Increase z + 40cm
+        cartesian_pose: Pose() = self.FK(position)
+        cartesian_pose.position.z += 0.40
 
-        #init posizione cartesiana
-        cartesian_pose = CartesianPoint()
+        # cartesian_pose = CartesianPoint()
+        # cartesian_response.tcp_position.position.z += 0.40
+        # cartesian_pose.cartesian_pose = cartesian_response.tcp_position
+        # cartesian_pose = cartesian_response.tcp_position
+        # cartesian_pose.velocity = 0.2
 
-        #alzo la z di 40cm
-        cartesian_response.tcp_position.position.z+=0.40
-        cartesian_pose.cartesian_pose = cartesian_response.tcp_position
+        # Cartesian Movement -> 40cm Over the Object
+        self.move_cartesian(cartesian_pose)
 
-        #velocita di salita e discesa in cartesiano
-        cartesian_pose.velocity = 0.2
-
-        #pubblico come prima posizione la posizione in cartesiano alzata di 40 cm 
-        self.ur10PubCartesian.publish(cartesian_pose)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred") 
-        #time.sleep(1)
-
-        #destinazione in giunti dell'oggetto
-        self.destinationPos.positions=position
-        self.ur10Pub.publish(self.destinationPos)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred") 
+        # Move to Object
+        self.move_joint(position) 
         time.sleep(1)
 
-        #chiusura/ apertura del gripper
-        self.gripping(end_grip)
+        # Grip Object
+        self.move_gripper(end_grip)
 
-        #ripubblico la posizione alzata di 40 cm in cartesiano
-        self.ur10PubCartesian.publish(cartesian_pose)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred") 
+        # Cartesian Movement -> 40cm Over the Object
+        self.move_cartesian(cartesian_pose)
         time.sleep(0.5)
 
-        self.intermidatePosition()
+        # Move to Intermediate Position
+        self.move_joint(intermediatePos)
 
-        #chiamata servise cinemarica inversa
-        cartesian_req= GetForwardKinematicRequest()
-        cartesian_req.joint_position= self.placePos
-        rospy.wait_for_service('ur_rtde/getFK')
-        cartesian_response = self.cartesian_srv(cartesian_req)
-        print(cartesian_response)
-
-        #init posizione cartesiana
-        cartesian_pose = CartesianPoint()
-
-        #alzo la z di 40cm
-        cartesian_response.tcp_position.position.z+=0.40
-        cartesian_pose.cartesian_pose = cartesian_response.tcp_position
-
-        #velocita di salita e discesa in cartesiano
-        cartesian_pose.velocity = 0.4
-
-        #pubblico come prima posizione la posizione in cartesiano alzata di 40 cm 
-        self.ur10PubCartesian.publish(cartesian_pose)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred") 
-        time.sleep(1)
-
-
-        self.destinationPos.positions=self.placePos
-        self.ur10Pub.publish(self.destinationPos)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred")
+        # Forward Kinematic -> Increase z + 40cm
+        cartesian_pose: Pose() = self.FK(placePos)
+        cartesian_pose.position.z += 0.40
         
-        self.gripping(start_grip)
-
-        #chiamata servise cinemarica inversa
-        cartesian_req= GetForwardKinematicRequest()
-        cartesian_req.joint_position= self.placePos
-        rospy.wait_for_service('ur_rtde/getFK')
-        cartesian_response = self.cartesian_srv(cartesian_req)
-        print(cartesian_response)
-
-        #init posizione cartesiana
-        cartesian_pose = CartesianPoint()
-
-        #alzo la z di 40cm
-        cartesian_response.tcp_position.position.z+=0.20
-        cartesian_pose.cartesian_pose = cartesian_response.tcp_position
-
-        #velocita di salita e discesa in cartesiano
-        cartesian_pose.velocity = 0.4
-
-        #pubblico come prima posizione la posizione in cartesiano alzata di 40 cm 
-        self.ur10PubCartesian.publish(cartesian_pose)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred")
-
-        #Risposta con Nodered
-        self.ttsPub.publish(tts_finale)
+        # Cartesian Movement -> 40cm Over the Object
+        self.move_cartesian(cartesian_pose)
         time.sleep(1)
 
-        self.returningPosition()
+        # Move to Place Position
+        self.move_joint(placePos) 
+
+        # Release Object
+        self.move_gripper(start_grip)
+
+        # Forward Kinematic -> Increase z + 20cm
+        cartesian_pose: Pose() = self.FK(placePos)
+        cartesian_pose.position.z += 0.20
+
+        # Cartesian Movement -> 20cm Over the Object
+        self.move_cartesian(cartesian_pose)
+
+        # Node-RED TTS Response
+        self.ttsPub.publish(tts_end)
+        time.sleep(1)
+
+        # Move to Home
+        self.move_joint(defaultPos)
 
     def stopRobot(self):
 
@@ -346,39 +279,21 @@ class Classificator:
         self.stop_req = TriggerRequest()
         self.stop_response = self.stop_service(self.stop_req)
 
-    def returningPosition(self):
-
-        self.destinationPos.positions=self.defaultPos
-        self.destinationPos.velocities = [0.8]
-        self.ur10Pub.publish(self.destinationPos)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred")
-        
-    def intermidatePosition(self):
-
-        self.destinationPos.positions=self.intermediatePos
-        self.destinationPos.velocities = [0.7]
-        self.ur10Pub.publish(self.destinationPos)
-        flag = rospy.wait_for_message('/ur_rtde/trajectory_executed', Bool)
-        if flag.data is not True:
-            raise Exception("Sorry, An exception occurred")
-        
     def cleaner(self):
          
-     self.voiceCheck = False
-     self.gestureCheck = False
-     self.areaCheck = False
+        self.voiceCheck = False
+        self.gestureCheck = False
+        self.areaCheck = False
 
-     self.gesture_vector = None
-     self.command = None
-     self.last_area = None
-    
-     self.voice_msg = None
-     self.gesture_msg = None
-     self.area_msg = None
+        self.gesture_vector = None
+        self.command = None
+        self.last_area = None
 
-     self.network_input = (0,0)
+        self.voice_msg = None
+        self.gesture_msg = None
+        self.area_msg = None
+
+        self.network_input = (0,0)
 
     def Counter(self):
 
@@ -470,21 +385,21 @@ class Classificator:
                         #Se il timer stava già andando interrompilo e ricomincia
                         if self.thread_active == True:
 
-                            self.my_thread.stop()
-                            self.my_thread.join()
+                            self.temporal_window_thread.stop()
+                            self.temporal_window_thread.join()
                             self.thread_active = False
 
                             #Apri un nuovo timer da zero 
                             self.thread_active = True
-                            self.my_thread = MyThread()
-                            self.my_thread.start()
+                            self.temporal_window_thread = MyThread()
+                            self.temporal_window_thread.start()
                             print("Timer Interrotto e Ripartito")
 
                         elif self.thread_active == False:
 
                             if self.thread_paused == True:
 
-                                self.my_thread.resume()
+                                self.temporal_window_thread.resume()
                                 self.thread_paused = False
                                 self.thread_active = True
                                 print("Timer Ripartito")
@@ -493,13 +408,13 @@ class Classificator:
 
                                 #Apri un nuovo timer da zero 
                                 self.thread_active = True
-                                self.my_thread = MyThread()
-                                self.my_thread.start()
+                                self.temporal_window_thread = MyThread()
+                                self.temporal_window_thread.start()
                                 print("Timer Partito")
 
                     elif self.network_input[0] == self.gesture_recognised and self.thread_paused == True:
                             
-                        self.my_thread.resume()
+                        self.temporal_window_thread.resume()
                         self.thread_paused = False
                         self.thread_active = True
                         print("Timer Ripartito anche se il gesto era lo stesso")
@@ -516,7 +431,7 @@ class Classificator:
                 #Se il timer stava già andando interrompilo 
                 if self.thread_active == True:
 
-                    self.my_thread.pause()
+                    self.temporal_window_thread.pause()
                     self.thread_active = False
                     self.thread_paused = True
                     print("Timer messo in pausa Manualmente")
@@ -531,8 +446,8 @@ class Classificator:
                 #Se il timer stava già andando interrompilo 
                 if self.thread_active == True:
 
-                    self.my_thread.stop()
-                    self.my_thread.join()
+                    self.temporal_window_thread.stop()
+                    self.temporal_window_thread.join()
                     self.thread_active = False
                     # self.stopRobot()                     #TODO DEVEFUNZIONARE ALTRIMENTI TOGLI
                     print("Timer Stoppato Manualmente")
@@ -560,12 +475,12 @@ class Classificator:
                     if self.thread_active == True:
                     
                         #Interrompo il vecchio
-                        self.my_thread.stop()
-                        self.my_thread.join()
+                        self.temporal_window_thread.stop()
+                        self.temporal_window_thread.join()
 
                         #Riapro uno nuovo
-                        self.my_thread = MyThread()
-                        self.my_thread.start()
+                        self.temporal_window_thread = MyThread()
+                        self.temporal_window_thread.start()
                         print("Timer Interrotto e Ripartito")
 
                     elif self.thread_active == False:
@@ -573,7 +488,7 @@ class Classificator:
                         if self.thread_paused == True:
                         
                             #Fai ripartire il nuovo timer
-                            self.my_thread.resume()
+                            self.temporal_window_thread.resume()
                             self.thread_paused = False
                             print("Timer Ripartito")
 
@@ -581,8 +496,8 @@ class Classificator:
                         
                             #Apri un nuovo timer da zero 
                             self.thread_active = True
-                            self.my_thread = MyThread()
-                            self.my_thread.start()
+                            self.temporal_window_thread = MyThread()
+                            self.temporal_window_thread.start()
                             print("Timer Partito")
 
                 else:
@@ -593,12 +508,12 @@ class Classificator:
             self.voiceCheck = False
 
         #When the timer is finished -> recognition = fusion
-        if int(self.my_thread.time) >= int(self.delay) and self.recognition_thread_active == False:
+        if int(self.temporal_window_thread.time) >= int(self.delay) and self.recognition_thread_active == False:
 
             #Interrompi il timer
             print("Timer finito")
-            self.my_thread.stop()
-            self.my_thread.join()
+            self.temporal_window_thread.stop()
+            self.temporal_window_thread.join()
             self.thread_active = False
     
             self.command = self.classificatorNetwork(self.network_input)
@@ -618,29 +533,29 @@ class Classificator:
                     objecttoTake = int(self.network_input[1]) + int(self.last_area)
 
                     #Puntato l'oggetto, controllo se si trova nell'area destra
-                    if objecttoTake in self.area_destra.values():
+                    if objecttoTake in RIGHT_AREA.values():
 
-                        for key, values in self.area_destra.items():
+                        for key, values in RIGHT_AREA.items():
                             if values == objecttoTake:
                                 objecttoTake = key
 
                                 tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
                                 print(tts_inziale)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
 
                     #Puntato l'oggetto, controllo se si trova nell'area sinistra
-                    elif objecttoTake in self.area_sinistra.values():
+                    elif objecttoTake in LEFT_AREA.values():
 
-                        for key, values in self.area_sinistra.items():
+                        for key, values in LEFT_AREA.items():
                             if values == objecttoTake:
                                 objecttoTake = key
 
                                 tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
                                 print(tts_inziale)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
                                 
                     else: 
@@ -656,7 +571,7 @@ class Classificator:
             #0 + oggetto generico
             if self.command >= 6 and self.command <= 10:
 
-                tts = "Mi dispiace, c'è più di un oggetto che corrisponde alla tua descrizione, ricorda che puoi sempre chiedermi informazioni sugli oggetti per tipo o per area, oppure puoi indicarmi l'oggetto che vuoi!"
+                tts = "Mi dispiace, c'è più di un oggetto che corrisponde alla tua descrizione, ricorda che puoi sempre chiedermi informazioni sugli OBJECTS per tipo o per area, oppure puoi indicarmi l'oggetto che vuoi!"
                 print(tts)
                 self.ttsPub.publish(tts)
 
@@ -665,7 +580,7 @@ class Classificator:
 
                 objecttoTake = int(self.network_input[1])
 
-                for key, values in self.area_destra.items():
+                for key, values in RIGHT_AREA.items():
                             #Se l'oggetto specifico nominato si trova lì prendilo
                             if values == objecttoTake:
                                 objecttoTake = key
@@ -674,11 +589,11 @@ class Classificator:
                                 tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
                                 print(tts_inziale)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
 
 
-                for key, values in self.area_sinistra.items():
+                for key, values in LEFT_AREA.items():
 
                             #Se l'oggetto specifico nominato si trova lì prendilo
                             if values == objecttoTake:
@@ -688,7 +603,7 @@ class Classificator:
                                 tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
                                 print(tts_inziale)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
 
 
@@ -702,7 +617,7 @@ class Classificator:
 
                     if self.last_area == 1:
 
-                        for key, values in self.area_destra.items():
+                        for key, values in RIGHT_AREA.items():
                             #Se l'oggetto specifico nominato si trova lì prendilo
                             if values == objecttoTake:
                                 objecttoTake = key
@@ -711,13 +626,13 @@ class Classificator:
                                 tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
                                 print(tts_inziale)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
 
                     #Se ho indicato l'area di sinistra
                     elif self.last_area == 2:
 
-                        for key, values in self.area_sinistra.items():
+                        for key, values in LEFT_AREA.items():
 
                             #Se l'oggetto specifico nominato si trova lì prendilo
                             if values == objecttoTake:
@@ -727,7 +642,7 @@ class Classificator:
                                 tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
                                 print(tts_inziale)
                                 tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, self.oggetti[key][0], self.oggetti[key][1], self.oggetti[key][2], tts_finale)
+                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
                                 print(tts_finale)
 
                     else:
@@ -782,13 +697,13 @@ class Classificator:
                     print(2)
                     if self.last_area == 1:
 
-                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(self.area_destra))
+                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(RIGHT_AREA))
                         print(tts)
                         self.ttsPub.publish(tts)
 
                     elif self.last_area == 2:
 
-                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(self.area_sinistra) )
+                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(LEFT_AREA) )
 
                     else:
 
@@ -804,8 +719,8 @@ class Classificator:
 
             if self.thread_active == True:
                 print("Timer finito")
-                self.my_thread.stop()
-                self.my_thread.join()
+                self.temporal_window_thread.stop()
+                self.temporal_window_thread.join()
                 self.thread_active = False
 
             self.cleaner()
@@ -821,7 +736,7 @@ class MyThread(threading.Thread):
 
     def run(self):
 
-        while not self.stop_event.is_set():
+        while not self.stop_event.is_set() and not rospy.is_shutdown():
             self.paused.wait()
             self.time += 1
             rospy.sleep(1)
@@ -837,12 +752,11 @@ class MyThread(threading.Thread):
         self.stop_event.set()
         self.time = 0
 
-        
 if __name__ == '__main__':
 
-    classificatore = Classificator()
+    # Initialize Multimodal Fusion Node
+    multimodal_fusion = Fusion()
 
-    print("-- Nodo Multimodale Pronto --")
-    
+    # Run Time Manager
     while not rospy.is_shutdown():
-        classificatore.timeManager()
+        multimodal_fusion.timeManager()
