@@ -148,7 +148,7 @@ class Fusion:
         # pos = JointTrajectoryPoint()
         # pos.time_from_start = rospy.Duration(0)
         # pos.velocities = [0.4]
-        
+
         # Publish Joint Position
         self.ur10Pub.publish(pos)
 
@@ -179,7 +179,7 @@ class Fusion:
         res: GetForwardKinematicResponse = self.get_FK_srv(req)
 
         return res.tcp_position
-    
+
     def IK(self, pose:Pose) -> List[float]:
 
         # Set Inverse Kinematic Request
@@ -232,7 +232,7 @@ class Fusion:
         self.move_cartesian(cartesian_pose)
 
         # Move to Object
-        self.move_joint(position) 
+        self.move_joint(position)
         time.sleep(1)
 
         # Grip Object
@@ -254,7 +254,7 @@ class Fusion:
         time.sleep(1)
 
         # Move to Place Position
-        self.move_joint(placePos) 
+        self.move_joint(placePos)
 
         # Release Object
         self.move_gripper(start_grip)
