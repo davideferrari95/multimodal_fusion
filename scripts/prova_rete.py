@@ -1,6 +1,6 @@
 import torch
 # import torch.nn as nn
-from Rete_neurale_classificatrice import LitNeuralNet
+from neural_classifier import LitNeuralNet
 #from pytorch_lightning import Trainer
 
 
