@@ -128,7 +128,7 @@ class Fusion:
         self.robot.move_joint(intermediatePos)
 
         # Forward Kinematic -> Increase z + 40cm
-        cartesian_pose: Pose() = self.FK(position)
+        cartesian_pose: Pose() = self.robot.FK(position)
         cartesian_pose.position.z += 0.40
 
         # cartesian_pose = CartesianPoint()
@@ -155,7 +155,7 @@ class Fusion:
         self.robot.move_joint(intermediatePos)
 
         # Forward Kinematic -> Increase z + 40cm
-        cartesian_pose: Pose() = self.FK(placePos)
+        cartesian_pose: Pose() = self.robot.FK(placePos)
         cartesian_pose.position.z += 0.40
         
         # Cartesian Movement -> 40cm Over the Object
@@ -169,7 +169,7 @@ class Fusion:
         self.robot.move_gripper(start_grip)
 
         # Forward Kinematic -> Increase z + 20cm
-        cartesian_pose: Pose() = self.FK(placePos)
+        cartesian_pose: Pose() = self.robot.FK(placePos)
         cartesian_pose.position.z += 0.20
 
         # Cartesian Movement -> 20cm Over the Object
@@ -352,7 +352,7 @@ class Fusion:
                     self.temporal_window_thread.stop()
                     self.temporal_window_thread.join()
                     self.thread_active = False
-                    # self.stopRobot()                     #TODO DEVEFUNZIONARE ALTRIMENTI TOGLI
+                    # self.robot.stopRobot()                     #TODO DEVEFUNZIONARE ALTRIMENTI TOGLI
                     print("Timer Stoppato Manualmente")
                     self.cleaner()  #Questo è fondamentale, è la differenza fra stop e pause
                 
