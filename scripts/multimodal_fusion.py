@@ -123,12 +123,15 @@ class Fusion:
 
         # Move Gripper to Starting Position (Open/Close for Internal/External Gripping)
         self.robot.move_gripper(start_grip)
+        rospy.loginfo('Move Gripper')
 
         # Move to Intermediate Position
         self.robot.move_joint(intermediatePos)
+        rospy.loginfo('Move to Intermediate Pos')
 
         # Forward Kinematic -> Increase z + 40cm
         cartesian_pose: Pose() = self.robot.FK(position)
+        rospy.loginfo('Forward Kinematic')
         cartesian_pose.position.z += 0.40
 
         # cartesian_pose = CartesianPoint()
@@ -139,41 +142,52 @@ class Fusion:
 
         # Cartesian Movement -> 40cm Over the Object
         self.robot.move_cartesian(cartesian_pose)
+        rospy.loginfo('Move Over the Object')
 
         # Move to Object
         self.robot.move_joint(position)
+        rospy.loginfo('Move To the Object')
         time.sleep(1)
 
         # Grip Object
         self.robot.move_gripper(end_grip)
+        rospy.loginfo('Move Gripper')
 
         # Cartesian Movement -> 40cm Over the Object
         self.robot.move_cartesian(cartesian_pose)
+        rospy.loginfo('Move Over the Object')
         time.sleep(0.5)
 
         # Move to Intermediate Position
         self.robot.move_joint(intermediatePos)
+        rospy.loginfo('Move to Intermediate Pos')
 
         # Forward Kinematic -> Increase z + 40cm
         cartesian_pose: Pose() = self.robot.FK(placePos)
+        rospy.loginfo('Forward Kinematic')
         cartesian_pose.position.z += 0.40
         
-        # Cartesian Movement -> 40cm Over the Object
+        # Cartesian Movement -> 40cm Over the Place Position
         self.robot.move_cartesian(cartesian_pose)
+        rospy.loginfo('Move Over the Place Position')
         time.sleep(1)
 
         # Move to Place Position
         self.robot.move_joint(placePos)
+        rospy.loginfo('Move To the Place Position')
 
         # Release Object
         self.robot.move_gripper(start_grip)
+        rospy.loginfo('Move Gripper')
 
         # Forward Kinematic -> Increase z + 20cm
         cartesian_pose: Pose() = self.robot.FK(placePos)
+        rospy.loginfo('Forward Kinematic')
         cartesian_pose.position.z += 0.20
 
-        # Cartesian Movement -> 20cm Over the Object
+        # Cartesian Movement -> 20cm Over the Place Position
         self.robot.move_cartesian(cartesian_pose)
+        rospy.loginfo('Move Over the Place Position')
 
         # Node-RED TTS Response
         self.ttsPub.publish(tts_end)
@@ -181,6 +195,7 @@ class Fusion:
 
         # Move to Home
         self.robot.move_joint(defaultPos)
+        rospy.loginfo('Move To Home')
 
     def cleaner(self):
          

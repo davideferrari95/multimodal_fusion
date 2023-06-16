@@ -64,6 +64,7 @@ class UR10e_RTDE_Move():
 
         # Call Inverse Kinematic
         joint_position = self.IK(tcp_position)
+        rospy.loginfo('Inverse Kinematic')
 
         # Joint Space Movement
         self.move_joint(joint_position)
