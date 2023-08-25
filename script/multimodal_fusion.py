@@ -4,16 +4,13 @@ import rospy, rospkg
 import os, threading, time
 import torch
 
-from collections import Counter
-
 # Import ROS Messages
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Int32MultiArray, String
 
-from move_robot import UR10e_RTDE_Move
-from neural_classifier import LitNeuralNet
-from utils import OBJECTS, RIGHT_AREA, LEFT_AREA
-from utils import defaultPos, placePos, intermediatePos
+# Import Utilities
+from utils.move_robot import UR10e_RTDE_Move
+from network.neural_classifier_training import LitNeuralNet
 
 class Fusion:
 
@@ -23,7 +20,7 @@ class Fusion:
         rospy.init_node('multimodal_fusion', anonymous=True)
 
         # Get Package Path
-        package_path = rospkg.RosPack().get_path('fusion')
+        package_path = rospkg.RosPack().get_path('multimodal_fusion')
 
         # Instance Robot Movement Class
         self.robot = UR10e_RTDE_Move()
@@ -213,26 +210,6 @@ class Fusion:
 
         self.network_input = (0,0)
 
-    def Counter(self):
-
-        # Conta le occorrenze di ciascun elemento nella tupla
-        conteggio = Counter(self.gesture_vector)
-    
-        # Trova l'elemento più frequente e il numero di volte che appare
-        elemento_piu_frequente, frequenza_piu_alta = conteggio.most_common(1)[0]
-    
-        # Calcola la percentuale di frequenza rispetto alla lunghezza della tupla
-        percentuale_frequenza = (frequenza_piu_alta / len(self.gesture_vector)) * 100
-    
-        # Verifica se l'elemento più frequente è presente per almeno l'80% dei casi
-        if percentuale_frequenza >= self.recognition_percentage:
-            print("Ho riconosciuto il gesto {}".format(elemento_piu_frequente))
-            return elemento_piu_frequente
-
-        else:
-            print("Comando Gestuale Non Riconosciuto")
-        
-        self.gesture_vector = None
 
     def classificatorNetwork(self, input):
 
