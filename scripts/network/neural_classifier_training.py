@@ -17,16 +17,11 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # Project Folder (ROOT Project Location)
 PROJECT_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__),"../.."))
 
-# Hyper-Parameters 
-input_size      = 2       
-hidden_size1    = 32        
-hidden_size2    = 64      
-output_size     = 35
-num_epochs      = 1500              
+# Hyper-Parameters (7 Labels)
+input_size, hidden_size, output_size = 2, [32, 64], 7
+train_percent, val_percent, test_percent = 0.8, 0.1, 0.1
+num_epochs      = 1500
 learning_rate   = 0.004
-train_percent   = 0.8
-val_percent     = 0.1
-test_percent    = 0.1
 
 class CSVDataset(Dataset):
 
@@ -55,13 +50,13 @@ class LitNeuralNet(pl.LightningModule):
 
     """ PyTorch Lightning Neural Network """
 
-    def __init__(self, train_percent: float, val_percent: float, test_percent: float, input_size, hidden_size1, hidden_size2, output_size, transform=None):
+    def __init__(self, train_percent: float, val_percent: float, test_percent: float, input_size=2, hidden_size=[32,64], output_size=7, transform=None):
         super(LitNeuralNet, self).__init__()
 
-        # Define Network Layers 
-        self.fc1 = nn.Linear(input_size, hidden_size1)
-        self.fc2 = nn.Linear(hidden_size1, hidden_size2)
-        self.fc3 = nn.Linear(hidden_size2, output_size)
+        # Define Network Layers
+        self.fc1 = nn.Linear(input_size, hidden_size[0])
+        self.fc2 = nn.Linear(hidden_size[0], hidden_size[1])
+        self.fc3 = nn.Linear(hidden_size[1], output_size)
 
         # Define Hyper-Parameters
         self.train_percent, self.val_percent, self.test_percent = train_percent, val_percent, test_percent
@@ -129,8 +124,6 @@ class LitNeuralNet(pl.LightningModule):
         # DataLoader for the Test Set
         return DataLoader(self.test_dataset, batch_size=64, num_workers = 12, shuffle=False)
 
-
-
 if __name__ == '__main__':
 
     # Init PyTorch Lightning Trainer
@@ -148,7 +141,7 @@ if __name__ == '__main__':
     )
 
     # Init PyTorch Lightning Model
-    model = LitNeuralNet(train_percent, val_percent, test_percent, input_size, hidden_size1, hidden_size2, output_size)
+    model = LitNeuralNet(train_percent, val_percent, test_percent, input_size, hidden_size, output_size)
     # compiled_model = torch.compile(model)
 
     # Train the Model
