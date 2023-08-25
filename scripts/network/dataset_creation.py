@@ -76,7 +76,7 @@ def writeCSV():
             elif label == 5: gesture, voice = 3, 0
 
             # 6: Pause (Gesture Only)
-            elif label == 5: gesture, voice = 1, 0
+            elif label == 6: gesture, voice = 1, 0
 
             # Write CSV Row
             csv_writer.writerow([label, gesture, voice])
