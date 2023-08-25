@@ -1,2 +1,3 @@
 # multimodal_fusion
-Multimodel Fusion between Gesture and Voice
+
+Multimodal Fusion between Gesture and Voice
