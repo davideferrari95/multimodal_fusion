@@ -17,8 +17,8 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # Project Folder (ROOT Project Location)
 PROJECT_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__),"../.."))
 
-# Hyper-Parameters (7 Labels)
-input_size, hidden_size, output_size = 2, [32, 64], 7
+# Hyper-Parameters (15 Labels)
+input_size, hidden_size, output_size = 2, [32, 64], 15
 train_percent, val_percent, test_percent = 0.8, 0.1, 0.1
 num_epochs      = 1500
 learning_rate   = 0.004
@@ -50,7 +50,7 @@ class LitNeuralNet(pl.LightningModule):
 
     """ PyTorch Lightning Neural Network """
 
-    def __init__(self, train_percent: float, val_percent: float, test_percent: float, input_size=2, hidden_size=[32,64], output_size=7, transform=None):
+    def __init__(self, train_percent: float, val_percent: float, test_percent: float, input_size=2, hidden_size=[32,64], output_size=15, transform=None):
         super(LitNeuralNet, self).__init__()
 
         # Define Network Layers

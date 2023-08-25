@@ -12,6 +12,14 @@ Labelling:
     4: Point-At (Gesture Only)
     5: Stop (Gesture Only)
     6: Pause (Gesture Only)
+    7: Start Experiment (Voice Only)
+    8: Object Moved (Voice Only)
+    9: User Moved (Voice Only)
+    10: User Can't Move (Voice Only)
+    11: Replan Trajectory (Voice Only)
+    12: Wait For Command (Voice Only)
+    13: Can Go (Voice Only)
+    14: Wait Time (Voice Only)
 
 Voice Commands:
 
@@ -38,8 +46,8 @@ Gestures:
 """
 
 # Dataset Parameters
-n_dataset_row = 10001
-last_scenario = 6
+n_dataset_row = 50001
+last_scenario = 14
 
 # Project Folder (ROOT Project Location)
 PROJECT_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__),"../.."))
@@ -77,6 +85,30 @@ def writeCSV():
 
             # 6: Pause (Gesture Only)
             elif label == 6: gesture, voice = 1, 0
+
+            # 7: Start Experiment (Voice Only)
+            elif label == 7: gesture, voice = 0, 1
+
+            # 8: Object Moved (Voice Only)
+            elif label == 8: gesture, voice = 0, 2
+
+            # 9: User Moved (Voice Only)
+            elif label == 9: gesture, voice = 0, 6
+
+            # 10: User Can't Move (Voice Only)
+            elif label == 10: gesture, voice = 0, 7
+
+            # 11: Replan Trajectory (Voice Only)
+            elif label == 11: gesture, voice = 0, 8
+
+            # 12: Wait For Command (Voice Only)
+            elif label == 12: gesture, voice = 0, 9
+
+            # 13: Can Go (Voice Only)
+            elif label == 13: gesture, voice = 0, 10
+
+            # 14: Wait Time (Voice Only)
+            elif label == 14: gesture, voice = 0, 11
 
             # Write CSV Row
             csv_writer.writerow([label, gesture, voice])
