@@ -1,18 +1,82 @@
 #!/usr/bin/env python3
 
 import rospy, rospkg
-import os, threading, time
-import torch
+import os, torch
 
 # Import ROS Messages
-from geometry_msgs.msg import Pose
-from std_msgs.msg import Int32MultiArray, String
+from std_msgs.msg import Int32MultiArray
+from multimodal_fusion.msg import VoiceCommand, FusedCommand
+
+# Import Neural Network
+from network.neural_classifier_training import LitNeuralNet
 
 # Import Utilities
 from utils.move_robot import UR10e_RTDE_Move
-from network.neural_classifier_training import LitNeuralNet
+from utils.utils import MyThread, count_occurrences, classifierNetwork
+from utils.command_list import *
+
+"""
+
+Labelling:
+
+    0: Empty Command
+    1: Place Object + Given Area (Voice Only)
+    2: Place Object + Given Area + Point-At
+    3: Place Object + Point-At
+    4: Point-At (Gesture Only)
+    5: Stop (Gesture Only)
+    6: Pause (Gesture Only)
+
+    10: Start Experiment
+    11: Object Moved
+    12: User Moved
+    13: User Can't Move
+    14: Replan Trajectory
+    15: Wait for Command
+    16: Can Go
+    17: Wait Time
+
+Voice Commands:
+
+    0:  NULL
+    1:  EXPERIMENT_START
+    2:  MOVED_OBJECT
+    3:  PUT_OBJECT_IN_AREA
+    4:  PUT_OBJECT_IN_GIVEN_AREA
+    5:  PUT_OBJECT_IN_AREA_GESTURE
+    6:  USER_MOVED
+    7:  USER_CANT_MOVE
+    8:  REPLAN_TRAJECTORY
+    9:  WAIT_FOR_COMMAND
+    10: CAN_GO
+    11: WAIT_TIME
+
+Gestures:
+
+    0: No Gesture
+    1: Pause
+    2: Point-At
+    3: Stop
+
+"""
 
 class Fusion:
+
+    # Received Message Flags
+    voiceCheck, gestureCheck, gesture_msgCheck, areaCheck = False, False, False, False
+
+    # Received Messages
+    voice_msg, gesture_msg, area_msg, voice_area = None, None, None, None
+
+    # Parameters
+    delay, recognition_time, recognition_percentage = 4, 2, 80
+
+    # Variables
+    gesture_vector, last_area, command = None, None, None
+    network_input = (0,0)
+
+    # Thread Flags
+    thread_active, recognition_thread_active = False, False
 
     def __init__(self):
 
@@ -26,15 +90,15 @@ class Fusion:
         self.robot = UR10e_RTDE_Move()
 
         # Publishers
-        self.ttsPub = rospy.Publisher('/tts',String,queue_size=1)
+        self.fusionPub = rospy.Publisher('/fused_command', FusedCommand, queue_size=10)
 
         # Subscribers
-        rospy.Subscriber("voice",   Int32MultiArray, self.voiceCallback)
-        rospy.Subscriber("gesture", Int32MultiArray, self.gestureCallback)
-        rospy.Subscriber("area",    Int32MultiArray, self.areaCallback)
+        rospy.Subscriber('/voice_command',   VoiceCommand,    self.voiceCallback)
+        rospy.Subscriber('/gesture_command', Int32MultiArray, self.gestureCallback)
+        rospy.Subscriber('/point_area',      Int32MultiArray, self.areaCallback)
 
         # Init Classifier Neural Network
-        self.model = LitNeuralNet(0.8,0.1,0.1,2,32,64,35)
+        self.model = LitNeuralNet(0.8, 0.1, 0.1, 2, [32,64], 15)
         state_dict = torch.load(os.path.join(package_path, 'model/fusion_model.pth'))
         self.model.load_state_dict(state_dict)
         self.model.eval()
@@ -43,44 +107,15 @@ class Fusion:
         self.temporal_window_thread = MyThread()
         self.recognition_thread = MyThread()
 
-        # Init Variables
-        self.init_variables()
-
         rospy.logwarn('Multimodal Fusion Initialized')
 
-    def init_variables(self):
-
-        self.voiceCheck = False
-        self.gestureCheck = False
-        self.gesture_msgCheck = False
-        self.areaCheck = False
-
-        self.last_area = None
-
-        self.delay = 4
-        self.recognition_time = 2
-        self.recognition_percentage = 80
-
-        self.gesture_vector = None
-
-        self.voice_msg = None
-        self.gesture_msg = None
-        self.area_msg = None
-
-        self.network_input = (0,0)
-
-        self.command = None
-
-        self.thread_active = False
-        self.thread_paused = False
-        self.recognition_thread_active = False
-
-    def voiceCallback(self, data:Int32MultiArray):
+    def voiceCallback(self, data:VoiceCommand):
 
         # Save Voice Message
-        self.voice_msg = data.data
-        #self.voice_time_stamp = datetime.datetime.now()
-        rospy.logwarn(f"Received Voice Command: {self.voice_msg}")
+        self.voice_msg = data.command
+        self.voice_area = data.area
+
+        rospy.logwarn(f'Received Voice Command: {self.voice_msg} | {data.info}')
 
         # Set Voice Message Flag
         self.voiceCheck = True
@@ -89,8 +124,6 @@ class Fusion:
 
         # Save Gesture Message
         self.gesture_msg = data.data
-        #self.gesture_time_stamp = datetime.datetime.now()
-        # rospy.logwarn(f"Received Gesture Command: {self.gesture_msg}")
 
         # Open Recognition Thread
         if self.recognition_thread_active == False:
@@ -98,7 +131,7 @@ class Fusion:
             self.recognition_thread_active = True
             self.recognition_thread = MyThread()
             self.recognition_thread.start()
-            rospy.loginfo("Gesture Recognition Started")
+            rospy.loginfo('Gesture Recognition Started')
 
         # If Mono-dimensional: Overwrite | else: Append
         if self.gesture_vector is None: self.gesture_vector = self.gesture_msg
@@ -107,551 +140,191 @@ class Fusion:
     def areaCallback(self, data:Int32MultiArray):
 
         # Save Area Message
-        self.area_msg = data.data 
-        # rospy.logwarn(f"Received Area Command: {self.area_msg}")
+        self.area_msg = data.data
 
         # Set Area Flag
         self.areaCheck = True
 
-    def handover(self, tts_start, position, start_grip, end_grip, tts_end):
+    def reset(self):
 
-        # Node-RED Start TTS
-        self.ttsPub.publish(tts_start)
+        # Reset Flags
+        self.voiceCheck, self.gestureCheck, self.areaCheck = False, False, False
 
-        # Move Gripper to Starting Position (Open/Close for Internal/External Gripping)
-        self.robot.move_gripper(start_grip)
-        rospy.loginfo('Move Gripper')
-
-        # Move to Intermediate Position
-        self.robot.move_joint(intermediatePos)
-        rospy.loginfo('Move to Intermediate Pos')
-
-        # Forward Kinematic -> Increase z + 40cm
-        cartesian_pose: Pose() = self.robot.FK(position)
-        rospy.loginfo('Forward Kinematic')
-        cartesian_pose.position.z += 0.40
-
-        # cartesian_pose = CartesianPoint()
-        # cartesian_response.tcp_position.position.z += 0.40
-        # cartesian_pose.cartesian_pose = cartesian_response.tcp_position
-        # cartesian_pose = cartesian_response.tcp_position
-        # cartesian_pose.velocity = 0.2
-
-        # Cartesian Movement -> 40cm Over the Object
-        self.robot.move_cartesian(cartesian_pose)
-        rospy.loginfo('Move Over the Object')
-
-        # Move to Object
-        self.robot.move_joint(position)
-        rospy.loginfo('Move To the Object')
-        time.sleep(1)
-
-        # Grip Object
-        self.robot.move_gripper(end_grip)
-        rospy.loginfo('Move Gripper')
-
-        # Cartesian Movement -> 40cm Over the Object
-        self.robot.move_cartesian(cartesian_pose)
-        rospy.loginfo('Move Over the Object')
-        time.sleep(0.5)
-
-        # Move to Intermediate Position
-        self.robot.move_joint(intermediatePos)
-        rospy.loginfo('Move to Intermediate Pos')
-
-        # Forward Kinematic -> Increase z + 40cm
-        cartesian_pose: Pose() = self.robot.FK(placePos)
-        rospy.loginfo('Forward Kinematic')
-        cartesian_pose.position.z += 0.40
-        
-        # Cartesian Movement -> 40cm Over the Place Position
-        self.robot.move_cartesian(cartesian_pose)
-        rospy.loginfo('Move Over the Place Position')
-        time.sleep(1)
-
-        # Move to Place Position
-        self.robot.move_joint(placePos)
-        rospy.loginfo('Move To the Place Position')
-
-        # Release Object
-        self.robot.move_gripper(start_grip)
-        rospy.loginfo('Move Gripper')
-
-        # Forward Kinematic -> Increase z + 20cm
-        cartesian_pose: Pose() = self.robot.FK(placePos)
-        rospy.loginfo('Forward Kinematic')
-        cartesian_pose.position.z += 0.20
-
-        # Cartesian Movement -> 20cm Over the Place Position
-        self.robot.move_cartesian(cartesian_pose)
-        rospy.loginfo('Move Over the Place Position')
-
-        # Node-RED TTS Response
-        self.ttsPub.publish(tts_end)
-        time.sleep(1)
-
-        # Move to Home
-        self.robot.move_joint(defaultPos)
-        rospy.loginfo('Move To Home')
-
-    def cleaner(self):
-         
-        self.voiceCheck = False
-        self.gestureCheck = False
-        self.areaCheck = False
-
-        self.gesture_vector = None
-        self.command = None
-        self.last_area = None
-
-        self.voice_msg = None
-        self.gesture_msg = None
-        self.area_msg = None
-
+        # Reset Variables
+        self.gesture_vector, self.last_area = None, None
         self.network_input = (0,0)
 
+        # Reset Messages
+        self.voice_msg, self.gesture_msg, self.area_msg, self.voice_area = None, None, None, None
 
-    def classificatorNetwork(self, input):
+    def checkArea(self):
 
-        input = torch.tensor(input, dtype= torch.float32)     # 
-        output = self.model(input)
-        prediction = output.argmax(dim=0)
-        command = prediction.item()
-        print("Numero del comando:", command)
+        """ Check if Area Message is Received """
 
-        return command 
+        if self.area_msg[0] != self.last_area:
 
-    def timeManager(self):
-        
-        #Se il timer è scaduto
-        if int(self.recognition_thread.time) >= int(self.recognition_time):
+            # Reset Flags
+            self.areaCheck, self.area_msg = False, None
 
-            self.gesture_msg = None
+            # Save Last Area
+            self.last_area = self.area_msg[0]
+            print(f'Area: {self.last_area}')
 
-            #Se il gesto è stato riconosciuto
-            if self.gesture_vector is not None:
+    def checkGesture(self):
 
-                print("Il vettore gesto è: {}".format(self.gesture_vector))
+        """ Check if Gesture Message is Received """
 
-                #Se il gesto è stato pubblcato un numero di volte
-                if len(self.gesture_vector) > 3:
+        # Assert Gesture Recognized is in the Available Gestures
+        assert self.gesture_recognized in available_gestures.keys(), 'Gesture Not Recognized'
 
-                    #Prendi il più riconosciuto
-                    self.gesture_recognised = self.Counter()
+        # Avoid `No Gesture`
+        if self.gesture_recognized != 0:
 
-                    #Se il gesto è stato riconosciuto
-                    if self.gesture_recognised is not None:
+            # Gesture Different from the Previous One -> Restart Thread Timer
+            if self.network_input[0] != self.gesture_recognized:
 
-                        self.gesture_vector = None
-                        self.gestureCheck = True
+                # Update Network Input
+                self.network_input = (self.gesture_recognized, self.network_input[1])
 
-                #Se il gesto è stato riconosciuto una sola volta
-                else:
-                    print("Comando Gestuale pubblicato meno di tre volte")
-                    self.gesture_vector = None
-
- 
-            self.recognition_thread.stop()
-            self.recognition_thread.join()
-            self.recognition_thread_active = False
-
-        #Arriva l'area indicata
-        if self.areaCheck == True:
-
-            if self.area_msg[0] != self.last_area:
-
-                self.areaCheck = False
-                self.last_area = self.area_msg[0]
-                print("Area Indicata: {}".format(self.last_area))
-                self.area_msg = None
-
-        #Arriva il comando gestuale 
-        if self.gestureCheck == True:
-                
-            #Se il comando non appartiene a quelli per manipolare il time manager:
-            if ((self.gesture_recognised != 3) and (self.gesture_recognised != 2)) or ((self.gesture_recognised == 3) and (self.gesture_recognised == 2)) : #A xor B
-
-                #Se il vettore è vuoto o sto sovrascrivendo un vettore già esistente
-                if ((self.network_input == (0,0)) and (self.network_input[0] == 0 )) or ((self.network_input != (0,0)) and (self.network_input[0] != 0)):
-
-                    #Se il comando è diverso da quello precedente
-                    if self.network_input[0] != self.gesture_recognised:
-
-                        #Se il timer stava già andando interrompilo e ricomincia
-                        if self.thread_active == True:
-
-                            self.temporal_window_thread.stop()
-                            self.temporal_window_thread.join()
-                            self.thread_active = False
-
-                            #Apri un nuovo timer da zero 
-                            self.thread_active = True
-                            self.temporal_window_thread = MyThread()
-                            self.temporal_window_thread.start()
-                            print("Timer Interrotto e Ripartito")
-
-                        elif self.thread_active == False:
-
-                            if self.thread_paused == True:
-
-                                self.temporal_window_thread.resume()
-                                self.thread_paused = False
-                                self.thread_active = True
-                                print("Timer Ripartito")
-
-                            if self.thread_paused == False:
-
-                                #Apri un nuovo timer da zero 
-                                self.thread_active = True
-                                self.temporal_window_thread = MyThread()
-                                self.temporal_window_thread.start()
-                                print("Timer Partito")
-
-                    elif self.network_input[0] == self.gesture_recognised and self.thread_paused == True:
-                            
-                        self.temporal_window_thread.resume()
-                        self.thread_paused = False
-                        self.thread_active = True
-                        print("Timer Ripartito anche se il gesto era lo stesso")
-
-                    else:
-                        print("Gesto già catturato prima")
-
-                #Aggiorna il comando se appartiene a quelli predisposti alla fusione
-                self.network_input = (self.gesture_recognised,) + self.network_input[1:]
-
-            #Se il comando appartiene a quelli per manipolare il time manager: in questo caso Pause
-            elif self.gesture_recognised == 3:
-
-                #Se il timer stava già andando interrompilo 
-                if self.thread_active == True:
-
-                    self.temporal_window_thread.pause()
-                    self.thread_active = False
-                    self.thread_paused = True
-                    print("Timer messo in pausa Manualmente")
-
-                elif self.thread_active == False:
-
-                    print("Il Timer non stava Andando, non puoi metterlo in pausa")
-
-            #Se il comando appartiene a quelli per manipolare il time manager: in questo caso stop
-            elif self.gesture_recognised == 2:
-
-                #Se il timer stava già andando interrompilo 
+                # Stop Thread Timer
                 if self.thread_active == True:
 
                     self.temporal_window_thread.stop()
                     self.temporal_window_thread.join()
                     self.thread_active = False
-                    # self.robot.stopRobot()                     #TODO DEVEFUNZIONARE ALTRIMENTI TOGLI
-                    print("Timer Stoppato Manualmente")
-                    self.cleaner()  #Questo è fondamentale, è la differenza fra stop e pause
-                
-                elif self.thread_active == False:
-                        
-                        print("Il Timer non stava Andando, non puoi fermarlo")
 
-            else:
-                print("Comando Gestuale Non Riconosciuto")
+                # Restart Thread Timer
+                self.thread_active = True
+                self.temporal_window_thread = MyThread()
+                self.temporal_window_thread.start()
 
-            self.gestureCheck = False
-            self.gesture_recognised = None
+        # Reset Flags
+        self.gestureCheck, self.gesture_recognized = False, None
 
-        #Arriva un comando vocale
-        if self.voiceCheck == True:
+    def checkVoice(self):
 
-            if ((self.network_input == (0,0)) and (self.network_input[1] == 0 )) or ((self.network_input != (0,0)) and (self.network_input[1] != 0)):
+        """ Check if Voice Message is Received """
+        
+        # Assert Voice Command is in the Available Voice Commands
+        assert self.voice_msg in available_voice_commands.keys(), 'Voice Command Not Recognized'
 
-                #Se il comando che arriva è
-                if self.network_input[1] != self.voice_msg:
+        # Avoid `Null Command`
+        if self.voice_msg != 0:
 
-                    #Se il timer stava già andando interrompilo e ricomincia
-                    if self.thread_active == True:
-                    
-                        #Interrompo il vecchio
-                        self.temporal_window_thread.stop()
-                        self.temporal_window_thread.join()
+            # Voice Command Different from the Previous One -> Restart Thread Timer
+            if self.network_input[1] != self.voice_msg:
 
-                        #Riapro uno nuovo
-                        self.temporal_window_thread = MyThread()
-                        self.temporal_window_thread.start()
-                        print("Timer Interrotto e Ripartito")
+                # Update Network Input
+                self.network_input = (self.network_input[0], self.voice_msg)
 
-                    elif self.thread_active == False:
-                    
-                        if self.thread_paused == True:
-                        
-                            #Fai ripartire il nuovo timer
-                            self.temporal_window_thread.resume()
-                            self.thread_paused = False
-                            print("Timer Ripartito")
+                # Stop Thread Timer
+                if self.thread_active == True:
 
-                        elif self.thread_paused == False:
-                        
-                            #Apri un nuovo timer da zero 
-                            self.thread_active = True
-                            self.temporal_window_thread = MyThread()
-                            self.temporal_window_thread.start()
-                            print("Timer Partito")
+                    self.temporal_window_thread.stop()
+                    self.temporal_window_thread.join()
+                    self.thread_active = False
 
-                else:
-                    print("Comando vocale già catturato prima")
+                # Restart Thread Timer
+                self.thread_active = True
+                self.temporal_window_thread = MyThread()
+                self.temporal_window_thread.start()
 
-            #Ora alloco il nuovo comando vocale
-            self.network_input = self.network_input[:1] + self.voice_msg
-            self.voiceCheck = False
+        # Reset Flags
+        self.voiceCheck = False
 
-        #When the timer is finished -> recognition = fusion
+    def timeManager(self):
+
+        # Gesture Recognition Thread -> Out of Time
+        if int(self.recognition_thread.time) >= int(self.recognition_time):
+
+            # Gesture Recognized -> Check Percentage
+            if self.gesture_vector is not None:
+
+                print(f'Gesture Vector: {self.gesture_vector}')
+
+                # Get Most Recognized Gesture in the Vector if it's been published at least 3 times
+                self.gesture_recognized = count_occurrences(self.gesture_vector, self.recognition_percentage) if len(self.gesture_vector) > 3 else None
+
+                # If Gesture is Recognized -> Gesture Check = True
+                if self.gesture_recognized is not None: 
+
+                    print(f'Gesture Recognized: {self.gesture_recognized}')
+                    self.gestureCheck = True
+
+                else: print('Gesture Not Recognized')
+
+            # Clear Gesture Vector and Message
+            self.gesture_vector, self.gesture_msg = None, None
+
+            # Stop Recognition Thread
+            self.recognition_thread.stop()
+            self.recognition_thread.join()
+            self.recognition_thread_active = False
+
+        # Check Area, Gesture and Voice
+        if self.gestureCheck == True: self.checkGesture()
+        if self.voiceCheck   == True: self.checkVoice()
+        if self.areaCheck    == True: self.checkArea()
+
+        # Thread -> Out of Time
         if int(self.temporal_window_thread.time) >= int(self.delay) and self.recognition_thread_active == False:
 
-            #Interrompi il timer
-            print("Timer finito")
+            # Stop Thread
             self.temporal_window_thread.stop()
             self.temporal_window_thread.join()
             self.thread_active = False
+
+            # Get Fused Command from the Classifier Neural Network
+            command = classifierNetwork(self.network_input, self.model)
+            print(f'Fused Command: {command} | Network Input: {self.network_input}')
+
+            # Empty Command
+            if command == 0: print('Null Command')
+
+            # Command in Fused Command List
+            elif command in available_fused_commands.keys():
+
+                # Pass Fused Command to the FusedCommand Message
+                msg = FusedCommand()
+                msg.fused_command = command
+                msg.info = fused_command_info[command]
+
+                # Place Object in Given Area
+                if command in [1,2]: msg.area = self.voice_area
     
-            self.command = self.classificatorNetwork(self.network_input)
-            print("\nComando ricevuto: {}, dal vettore {} ".format(self.command, self.network_input))
+                # Place Object in Point-At Area
+                if command == 3: msg.area = self.last_area
 
-            #Vettore nullo, non so nemmeno come sia partito il timer
-        
-            if self.command == 0:
+            # Command in Voice-Only Command List
+            elif command in available_voice_only_commands.keys():
 
-                print("Il vettore era nullo")
+                # Pass Voice-Only Command to the FusedCommand Message
+                msg = FusedCommand()
+                msg.fused_command = command
+                msg.info = voice_only_command_info[command - len(fused_command_info)]
 
-            #point at + oggetto generico
-            if self.command >= 1 and self.command <= 5: 
+                # Wait Time Command -> Pass Wait Time (in `voice_area` Field)
+                if command == 14: msg.wait_time = self.voice_area
 
-                if self.last_area is not None:
+            # Publish Fused Command
+            self.fusionPub.publish(msg)
 
-                    objecttoTake = int(self.network_input[1]) + int(self.last_area)
-
-                    #Puntato l'oggetto, controllo se si trova nell'area destra
-                    if objecttoTake in RIGHT_AREA.values():
-
-                        for key, values in RIGHT_AREA.items():
-                            if values == objecttoTake:
-                                objecttoTake = key
-
-                                tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                print(tts_inziale)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-
-                    #Puntato l'oggetto, controllo se si trova nell'area sinistra
-                    elif objecttoTake in LEFT_AREA.values():
-
-                        for key, values in LEFT_AREA.items():
-                            if values == objecttoTake:
-                                objecttoTake = key
-
-                                tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                print(tts_inziale)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-                                
-                    else: 
-                        tts = "Mi dispiace, hai indicato un'area che non conosco"
-                        print(tts)
-                        self.ttsPub.publish(tts)
-                
-                else:
-                    tts = "Mi dispiace, non hai indicato nessuna area"
-                    print(tts)
-                    self.ttsPub.publish(tts)
-
-            #0 + oggetto generico
-            if self.command >= 6 and self.command <= 10:
-
-                tts = "Mi dispiace, c'è più di un oggetto che corrisponde alla tua descrizione, ricorda che puoi sempre chiedermi informazioni sugli OBJECTS per tipo o per area, oppure puoi indicarmi l'oggetto che vuoi!"
-                print(tts)
-                self.ttsPub.publish(tts)
-
-            #0 + oggetto specifico
-            if self.command >= 11 and self.command <= 21:
-
-                objecttoTake = int(self.network_input[1])
-
-                for key, values in RIGHT_AREA.items():
-                            #Se l'oggetto specifico nominato si trova lì prendilo
-                            if values == objecttoTake:
-                                objecttoTake = key
-                                object_check = True
-
-                                tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
-                                print(tts_inziale)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-
-
-                for key, values in LEFT_AREA.items():
-
-                            #Se l'oggetto specifico nominato si trova lì prendilo
-                            if values == objecttoTake:
-                                objecttoTake = key
-                                object_check = True
-
-                                tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
-                                print(tts_inziale)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-
-
-            #point at + oggetto specifico
-            if self.command >= 22 and self.command <= 32:
-
-                objecttoTake = int(self.network_input[1])
-                object_check = False
-
-                if self.last_area is not None:
-
-                    if self.last_area == 1:
-
-                        for key, values in RIGHT_AREA.items():
-                            #Se l'oggetto specifico nominato si trova lì prendilo
-                            if values == objecttoTake:
-                                objecttoTake = key
-                                object_check = True
-
-                                tts_inziale = "Ti prendo {} nell'area destra".format(objecttoTake)
-                                print(tts_inziale)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-
-                    #Se ho indicato l'area di sinistra
-                    elif self.last_area == 2:
-
-                        for key, values in LEFT_AREA.items():
-
-                            #Se l'oggetto specifico nominato si trova lì prendilo
-                            if values == objecttoTake:
-                                objecttoTake = key
-                                object_check = True
-
-                                tts_inziale = "Ti prendo {} nell'area sinistra".format(objecttoTake)
-                                print(tts_inziale)
-                                tts_finale = "Ecco {} che mi hai chiesto".format(objecttoTake)
-                                self.handover(tts_inziale, OBJECTS[key][0], OBJECTS[key][1], OBJECTS[key][2], tts_finale)
-                                print(tts_finale)
-
-                    else:
-                        
-                        tts = "Mi dispiace, non conosco l'area che hai indicato"
-                        print(tts)
-                        self.ttsPub.publish(tts)
-
-                else:
-
-                    tts = "Mi dispiace, non hai indicato nessuna area"
-                    print(tts)
-                    self.ttsPub.publish(tts)
-
-                if object_check == False:
-
-                    if self.last_area is not None:
-
-                        if self.last_area == 1:
-
-                            tts = "Mi dispiace, l'oggetto che cerchi non si trova nell'area destra"
-                            print(tts)
-                            self.ttsPub.publish(tts)
-
-                        elif self.last_area == 2:
-                            
-                            tts = "Mi dispiace, l'oggetto che cerchi non si trova nell'area sinistra"
-                            print(tts)
-                            self.ttsPub.publish(tts)
-                            
-            #point at + 0
-            if self.command == 33:
-
-                if self.last_area is not None:
-
-                    if self.last_area == 1:
-
-                        print("Mi hai indicato qualcosa nell'area destra, ma non capisco cosa tu voglia fare")
-
-                    elif self.last_area == 2:
-
-                        print("Mi hai indicato qualcosa nell'area sinistra, ma non capisco cosa tu voglia fare")
-                    else:
-                        print("Mi hai indicato qualcosa ma non conosco quest'area")
-                else:
-                    print("Hai provato a indicarmi qualcosa ma non ho capito nè cosa vuoi fare nè dove hai puntato")
-
-            if self.command == 34:
-
-                print(1)
-                if self.last_area is not None:
-                    print(2)
-                    if self.last_area == 1:
-
-                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(RIGHT_AREA))
-                        print(tts)
-                        self.ttsPub.publish(tts)
-
-                    elif self.last_area == 2:
-
-                        tts = "Nell'area che mi hai indicato sono presenti {}".format(', '.join(LEFT_AREA) )
-
-                    else:
-
-                        tts = "Mi dispiace, non conosco quest'area"
-                        print(tts)
-                        self.ttsPub.publish(tts)
-
-                else:
-
-                    tts = "Mi dispiace, non hai indicato nessuna area"
-                    print(tts)
-                    self.ttsPub.publish(tts)
-
+            # Reset Thread
             if self.thread_active == True:
-                print("Timer finito")
                 self.temporal_window_thread.stop()
                 self.temporal_window_thread.join()
                 self.thread_active = False
 
-            self.cleaner()
-
-class MyThread(threading.Thread):
-
-    def __init__(self):
-        super().__init__()
-        self.stop_event = threading.Event()
-        self.paused = threading.Event()
-        self.paused.set()
-        self.time = 0
-
-    def run(self):
-
-        while not self.stop_event.is_set() and not rospy.is_shutdown():
-            self.paused.wait()
-            self.time += 1
-            rospy.sleep(1)
-            if not self.time  == 0: print("Counter", self.time)
-
-    def resume(self):
-        self.paused.set()
-
-    def pause(self):
-        self.paused.clear()
-
-    def stop(self):
-        self.stop_event.set()
-        self.time = 0
+            # Reset Variables
+            self.reset()
 
 if __name__ == '__main__':
 
     # Initialize Multimodal Fusion Node
     multimodal_fusion = Fusion()
 
-    # Run Time Manager
+    # While ROS is Running
     while not rospy.is_shutdown():
+
+        # Run Time Manager
         multimodal_fusion.timeManager()
