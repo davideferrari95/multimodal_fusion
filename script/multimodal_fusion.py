@@ -27,14 +27,14 @@ Labelling:
     5: Stop (Gesture Only)
     6: Pause (Gesture Only)
 
-    10: Start Experiment
-    11: Object Moved
-    12: User Moved
-    13: User Can't Move
-    14: Replan Trajectory
-    15: Wait for Command
-    16: Can Go
-    17: Wait Time
+    7: Start Experiment
+    8: Object Moved
+    9: User Moved
+    10: User Can't Move
+    11: Replan Trajectory
+    12: Wait for Command
+    13: Can Go
+    14: Wait Time
 
 Voice Commands:
 
@@ -90,7 +90,7 @@ class Fusion:
         self.robot = UR10e_RTDE_Move()
 
         # Publishers
-        self.fusionPub = rospy.Publisher('/fused_command', FusedCommand, queue_size=10)
+        self.fusionPub = rospy.Publisher('/fused_command', FusedCommand, queue_size=1)
 
         # Subscribers
         rospy.Subscriber('/voice_command',   VoiceCommand,    self.voiceCallback)

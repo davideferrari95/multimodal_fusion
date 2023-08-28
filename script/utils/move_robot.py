@@ -16,6 +16,9 @@ from ur_rtde_controller.srv import RobotiQGripperControl, RobotiQGripperControlR
 from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicRequest, GetForwardKinematicResponse
 from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicRequest, GetInverseKinematicResponse
 
+GRIPPER_OPEN = 0
+GRIPPER_CLOSE = 100
+
 class UR10e_RTDE_Move():
     
     def __init__(self):
