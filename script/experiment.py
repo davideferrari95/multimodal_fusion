@@ -5,7 +5,7 @@ import rospy, time
 # Import ROS Messages
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose
-from multimodal_fusion.msg import FusedCommand
+from multimodal_fusion.msg import FusedCommand, TrajectoryError
 
 # Move Robot Utilities
 from utils.move_robot import UR10e_RTDE_Move, GRIPPER_OPEN, GRIPPER_CLOSE
@@ -46,7 +46,10 @@ class ExperimentManager():
 
     # Flags
     experiment_started = False
+
+    # Received Data
     received_command = EMPTY_COMMAND
+    received_error   = NO_ERROR
 
     def __init__(self) -> None:
 
@@ -62,6 +65,7 @@ class ExperimentManager():
 
         # Subscribers
         rospy.Subscriber('/fused_command', FusedCommand, self.commandCallback)
+        rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
 
     def commandCallback(self, data:FusedCommand):
 
@@ -69,10 +73,19 @@ class ExperimentManager():
         self.received_command = data
         rospy.logwarn(f"Received Command: {self.received_command}")
 
+        # Start Experiment Command -> Set Flag
+        if self.received_command.fused_command == START_EXPERIMENT: self.experiment_started = True
+
+    def trajectoryErrorCallback(self, data:TrajectoryError):
+
+        # Save Received Error
+        self.received_error = data
+        rospy.logwarn(f"Received Error: {self.received_error}")
+
     def handover(self, pick_position, place_position):
 
         # Move Gripper to Starting Position
-        self.robot.move_gripper(GRIPPER_OPEN)
+        if not self.robot.move_gripper(GRIPPER_OPEN): return False
         rospy.loginfo('Open Gripper')
 
         # Forward Kinematic -> Increase z + 20cm
@@ -81,20 +94,20 @@ class ExperimentManager():
         rospy.loginfo('Forward Kinematic')
 
         # Move 20cm Over the Object
-        self.robot.move_joint(pick_position_up)
+        if not self.robot.move_joint(pick_position_up): return False
         rospy.loginfo('Move Over the Object')
 
         # Move to Object
-        self.robot.move_joint(pick_position)
+        if not self.robot.move_joint(pick_position): return False
         rospy.loginfo('Move To the Object')
         time.sleep(1)
 
         # Grip Object
-        self.robot.move_gripper(GRIPPER_CLOSE)
+        if not self.robot.move_gripper(GRIPPER_CLOSE): return False
         rospy.loginfo('Close Gripper')
 
         # Move 20cm Over the Object
-        self.robot.move_joint(pick_position_up)
+        if not self.robot.move_joint(pick_position_up): return False
         rospy.loginfo('Move Over the Object')
         time.sleep(0.5)
 
@@ -104,24 +117,24 @@ class ExperimentManager():
         rospy.loginfo('Forward Kinematic')
 
         # Move 20cm Over the Place Position
-        self.robot.move_joint(place_position_up)
+        if not self.robot.move_joint(place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
         time.sleep(1)
 
         # Move to Place Position
-        self.robot.move_joint(place_position)
+        if not self.robot.move_joint(place_position): return False
         rospy.loginfo('Move To the Place Position')
 
         # Release Object
-        self.robot.move_gripper(GRIPPER_OPEN)
+        if not self.robot.move_gripper(GRIPPER_OPEN): return False
         rospy.loginfo('Open Gripper')
 
         # Move 20cm Over the Place Position
-        self.robot.move_joint(place_position_up)
+        if not self.robot.move_joint(place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
 
         # Move to Home
-        self.robot.move_joint(self.HOME)
+        if not self.robot.move_joint(self.HOME): return False
         rospy.loginfo('Move To Home')
 
     def run(self):

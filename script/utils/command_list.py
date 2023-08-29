@@ -17,6 +17,11 @@ WAIT_FOR_COMMAND                    = 12
 CAN_GO                              = 13
 WAIT_TIME                           = 14
 
+# Errors
+NO_ERROR                            = 100
+OBSTACLE_DETECTED_ERROR             = 101
+MOVE_TO_USER_ERROR                  = 102
+
 fused_command_info = [
     'EMPTY_COMMAND',
     'PLACE_OBJECT_GIVEN_AREA',
