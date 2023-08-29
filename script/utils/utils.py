@@ -26,11 +26,11 @@ def count_occurrences(vector, recognition_percentage):
         print('Gesture Not Recognized')
         return None
 
-def classifierNetwork(input, model):
+def classifierNetwork(input, model, device):
 
     """ Classify the Gesture """
 
-    input = torch.tensor(input, dtype= torch.float32)
+    input = torch.tensor(input, dtype=torch.float32, device=device)
     output = model(input)
     prediction = output.argmax(dim=0)
     command = prediction.item()

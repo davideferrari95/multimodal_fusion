@@ -71,7 +71,7 @@ class Fusion:
     voice_msg, gesture_msg, area_msg, voice_area = None, None, None, None
 
     # Parameters
-    delay, recognition_time, recognition_percentage = 4, 2, 80
+    delay, recognition_time, recognition_percentage = 3, 2, 80
 
     # Variables
     gesture_vector, last_area, command = None, None, None
@@ -276,7 +276,7 @@ class Fusion:
             self.thread_active = False
 
             # Get Fused Command from the Classifier Neural Network
-            command = classifierNetwork(self.network_input, self.model)
+            command = classifierNetwork(self.network_input, self.model, DEVICE)
             print(f'Fused Command: {command} | Network Input: {self.network_input}')
 
             # Empty Command
