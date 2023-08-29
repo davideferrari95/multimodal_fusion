@@ -196,7 +196,8 @@ include_directories(
 
 install(
   PROGRAMS
-    script/multimodal_fusion.py
+    script/fusion.py
+    script/experiment.py
     script/network/dataset_creation.py
     script/network/neural_classifier_training.py
     script/utils/move_robot.py

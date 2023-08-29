@@ -8,7 +8,9 @@ from std_msgs.msg import Int32MultiArray
 from multimodal_fusion.msg import VoiceCommand, FusedCommand
 
 # Import Neural Network
-from network.neural_classifier_training import LitNeuralNet
+from network.neural_classifier_training import LitNeuralNet, DEVICE
+from network.neural_classifier_training import input_size, hidden_size, output_size
+from network.neural_classifier_training import train_percent, val_percent, test_percent
 
 # Import Utilities
 from utils.move_robot import UR10e_RTDE_Move
@@ -98,9 +100,8 @@ class Fusion:
         rospy.Subscriber('/point_area',      Int32MultiArray, self.areaCallback)
 
         # Init Classifier Neural Network
-        self.model = LitNeuralNet(0.8, 0.1, 0.1, 2, [32,64], 15)
-        state_dict = torch.load(os.path.join(package_path, 'model/fusion_model.pth'))
-        self.model.load_state_dict(state_dict)
+        self.model = LitNeuralNet(train_percent, val_percent, test_percent, input_size, hidden_size, output_size).to(DEVICE)
+        self.model.load_state_dict(torch.load(os.path.join(package_path, 'model/fusion_model.pth')))
         self.model.eval()
 
         # Init Thread -> Temporal Window, Recognition
