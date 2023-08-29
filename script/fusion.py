@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import rospy, rospkg
-import os, torch
+import os, torch, signal
 
 # Import ROS Messages
 from std_msgs.msg import Int32MultiArray
@@ -14,7 +14,7 @@ from network.neural_classifier_training import train_percent, val_percent, test_
 
 # Import Utilities
 from utils.move_robot import UR10e_RTDE_Move
-from utils.utils import MyThread, count_occurrences, classifierNetwork
+from utils.utils import MyThread, count_occurrences, classifierNetwork, delete_pycache_folders
 from utils.command_list import *
 
 """
@@ -318,6 +318,17 @@ class Fusion:
 
             # Reset Variables
             self.reset()
+
+def handle_signal(sig, frame):
+
+    # Delete `__pycache__` Folders
+    delete_pycache_folders(verbose=True)
+
+    print("Done\n\n")
+    exit(0)
+
+# Register Signal Handler
+signal.signal(signal.SIGINT, handle_signal)
 
 if __name__ == '__main__':
 
