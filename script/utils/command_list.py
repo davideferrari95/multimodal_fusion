@@ -22,6 +22,18 @@ NO_ERROR                            = 100
 OBSTACLE_DETECTED_ERROR             = 101
 MOVE_TO_USER_ERROR                  = 102
 
+# Handover Errors
+OPEN_GRIPPER_ERROR                  = 201
+MOVE_OVER_OBJECT_ERROR              = 202
+MOVE_TO_OBJECT_ERROR                = 203
+CLOSE_GRIPPER_ERROR                 = 204
+MOVE_OVER_OBJECT_AFTER_ERROR        = 205
+MOVE_OVER_PLACE_ERROR               = 206
+MOVE_TO_PLACE_ERROR                 = 207
+OPEN_GRIPPER_AFTER_ERROR            = 208
+MOVE_OVER_PLACE_AFTER_ERROR         = 209
+MOVE_HOME_ERROR                     = 210
+
 fused_command_info = [
     'EMPTY_COMMAND',
     'PLACE_OBJECT_GIVEN_AREA',
