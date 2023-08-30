@@ -213,6 +213,9 @@ class ExperimentManager():
         # Place Object Movement Error -> Check Error Type
         elif handover_error in [MOVE_OVER_PLACE_ERROR, MOVE_TO_PLACE_ERROR, MOVE_OVER_PLACE_AFTER_ERROR]:
 
+            # Wait for Error Handling Command
+            while self.received_error is None: rospy.loginfo_throttle(5, 'Waiting for Error Message')
+
             # Obstacle Detected -> Move to User
             if self.received_error == OBSTACLE_DETECTED_ERROR:
 
