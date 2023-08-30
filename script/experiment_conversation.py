@@ -82,7 +82,7 @@ class ExperimentManager():
         elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.error_handling_command = data
 
         # Voice-Only Commands -> Save Error Handling Command
-        elif data.fused_command in [OBJECT_MOVED, USER_MOVED, USER_CANT_MOVE, REPLAN_TRAJECTORY, WAIT_FOR_COMMAND, CAN_GO, WAIT_TIME]: self.error_handling_command = data
+        elif data.fused_command in [OBJECT_MOVED, USER_MOVED, WAIT_FOR_COMMAND, WAIT_TIME]: self.error_handling_command = data
 
     def trajectoryErrorCallback(self, data:TrajectoryError):
 
@@ -214,7 +214,7 @@ class ExperimentManager():
         elif handover_error in [MOVE_OVER_PLACE_ERROR, MOVE_TO_PLACE_ERROR, MOVE_OVER_PLACE_AFTER_ERROR]:
 
             # Obstacle Detected -> Move to User
-            if self.received_error.error == OBSTACLE_DETECTED_ERROR:
+            if self.received_error == OBSTACLE_DETECTED_ERROR:
 
                 # Publish Error Message
                 error_msg = String()
@@ -262,7 +262,7 @@ class ExperimentManager():
                     return False
 
             # Move to User Error -> Stop Handover
-            elif self.received_error.error == MOVE_TO_USER_ERROR:
+            elif self.received_error == MOVE_TO_USER_ERROR:
 
                 # Publish Error Message
                 error_msg = String()
