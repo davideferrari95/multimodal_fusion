@@ -1,6 +1,12 @@
 <launch>
 
+	<!-- Experiment Type Args -->
+    <arg name="conversation" default="true"/>
+
+	<!-- Launch Conversation Experiment Node -->
+	<node if="$(arg conversation)" pkg="multimodal_fusion" type="experiment_conversation.py" name="experiment" output="screen"/>
+
 	<!-- Launch Experiment Node -->
-	<node pkg="multimodal_fusion" type="experiment.py" name="experiment" output="screen"/>
+	<node unless="$(arg conversation)" pkg="multimodal_fusion" type="experiment_simple.py" name="experiment" output="screen"/>
 
 </launch>
