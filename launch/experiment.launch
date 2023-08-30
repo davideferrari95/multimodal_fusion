@@ -1,0 +1,6 @@
+<launch>
+
+	<!-- Launch Experiment Node -->
+	<node pkg="multimodal_fusion" type="experiment.py" name="experiment" output="screen"/>
+
+</launch>

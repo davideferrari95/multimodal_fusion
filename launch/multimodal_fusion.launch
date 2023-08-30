@@ -1,0 +1,6 @@
+<launch>
+
+	<!-- Launch Fusion Node -->
+	<node pkg="multimodal_fusion" type="fusion.py" name="multimodal_fusion" output="screen"/>
+
+</launch>
