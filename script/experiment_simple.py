@@ -41,8 +41,8 @@ class ExperimentManager():
     HOME = [1.4624409675598145, -1.614187856713766, 1.8302066961871546, -1.795131345788473, -1.5152104536639612, -0.09420425096620733]
 
     # TTS Error Messages
-    OBSTACLE_DETECTED_ERROR_STRING = 'obstacle detected'
-    MOVE_TO_USER_ERROR_STRING = 'move to user'
+    OBSTACLE_DETECTED_ERROR_STRING = "There is an obstacle where I have to place the object"
+    MOVE_TO_USER_ERROR_STRING = "I have to get there, if you don't move I'll have to slow down too much"
 
     # Flags
     experiment_started, stop = False, False
@@ -61,7 +61,6 @@ class ExperimentManager():
 
         # Publishers
         self.ttsPub   = rospy.Publisher('/tts', String, queue_size=1)
-        self.eventPub = rospy.Publisher('/alexa_events', String, queue_size=1)
 
         # Subscribers
         rospy.Subscriber('/fused_command', FusedCommand, self.commandCallback)
@@ -82,7 +81,7 @@ class ExperimentManager():
         elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.error_handling_command = data
 
         # Voice-Only Commands -> Save Error Handling Command
-        elif data.fused_command in [OBJECT_MOVED, USER_MOVED, USER_CANT_MOVE, REPLAN_TRAJECTORY, WAIT_FOR_COMMAND, CAN_GO, WAIT_TIME]: self.error_handling_command = data
+        elif data.fused_command in [OBJECT_MOVED, USER_MOVED, WAIT_FOR_COMMAND, CAN_GO]: self.error_handling_command = data
 
     def trajectoryErrorCallback(self, data:TrajectoryError):
 
@@ -214,12 +213,12 @@ class ExperimentManager():
         elif handover_error in [MOVE_OVER_PLACE_ERROR, MOVE_TO_PLACE_ERROR, MOVE_OVER_PLACE_AFTER_ERROR]:
 
             # Obstacle Detected -> Move to User
-            if self.received_error.error == OBSTACLE_DETECTED_ERROR:
+            if self.received_error == OBSTACLE_DETECTED_ERROR:
 
                 # Publish Error Message
                 error_msg = String()
                 error_msg.data = self.OBSTACLE_DETECTED_ERROR_STRING
-                self.eventPub.publish(error_msg)
+                self.ttsPub.publish(error_msg)
                 rospy.logwarn('ERROR: Obstacle Detected')
 
                 # Wait for Error Handling Command
@@ -254,20 +253,13 @@ class ExperimentManager():
                     # Stop Handover
                     return False
 
-                elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
-
-                    # Stop Handover
-                    rospy.logwarn('WARN: Wait for Command Error Handling Received')
-                    self.wait_for_command = True
-                    return False
-
             # Move to User Error -> Stop Handover
-            elif self.received_error.error == MOVE_TO_USER_ERROR:
+            elif self.received_error == MOVE_TO_USER_ERROR:
 
                 # Publish Error Message
                 error_msg = String()
                 error_msg.data = self.MOVE_TO_USER_ERROR_STRING
-                self.eventPub.publish(error_msg)
+                self.ttsPub.publish(error_msg)
                 rospy.logwarn('ERROR: Move to User Error')
 
                 # Wait for Error Handling Command
@@ -275,7 +267,7 @@ class ExperimentManager():
                     rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
 
                 # User Moved -> Move to Place -> Restart Handover
-                if self.error_handling_command.fused_command == USER_MOVED:
+                if self.error_handling_command.fused_command in [USER_MOVED, CAN_GO]:
 
                     rospy.loginfo('User Moved Command -> Retry Place Object')
 
@@ -286,29 +278,6 @@ class ExperimentManager():
 
                         # Negative Error Handling -> Stop Handover
                         rospy.logerr('ERROR: An exception occurred during User Moved Error Handling')
-                        self.error_stop = True
-                        return False
-
-                # Wait Time -> Move to Place -> Restart Handover
-                elif self.error_handling_command.fused_command == WAIT_TIME:
-
-                    # Wait Time
-                    rospy.loginfo('Wait Time')
-                    print(type(self.error_handling_command.wait_time))
-                    time.sleep(30 if self.error_handling_command.wait_time is not int else self.error_handling_command.wait_time)
-
-                    # Publish TTS Message
-                    tts_msg = String()
-                    tts_msg.data = 'I restart moving to the place'
-                    self.ttsPub.publish(tts_msg)
-
-                    # Move to Position -> Positive Error Handling -> Continue Handover
-                    if self.robot.move_joint(goal_position): return True
-
-                    else:
-
-                        # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Wait Time Error Handling')
                         self.error_stop = True
                         return False
 
@@ -323,13 +292,6 @@ class ExperimentManager():
                         self.error_stop = True
 
                     # Stop Handover
-                    return False
-
-                elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
-
-                    # Stop Handover
-                    rospy.logwarn('WARN: Wait for Command Error Handling Received')
-                    self.wait_for_command = True
                     return False
 
         # Clear Error Handling Messages
@@ -352,31 +314,6 @@ class ExperimentManager():
 
             # Break if Stop Signal Received
             if self.error_stop: break
-
-            # Wait for Command Message
-            if self.wait_for_command:
-
-                # Wait for Command
-                while self.error_handling_command is None:
-                    rospy.loginfo_throttle(5, 'Waiting for Command')
-
-                # Put Object in Place Area -> Place Object -> Stop Handover
-                if self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
-
-                    # Place Object in Area Error Handling -> Stop Handover
-                    if not self.placeObject(place_area=self.error_handling_command.area):
-
-                        # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling')
-                        self.error_stop = True
-                        break
-
-                else:
-
-                    # Stop Handover
-                    rospy.logerr('ERROR: Wrong Command Received')
-                    self.error_stop = True
-                    break
 
             if not self.handover(object.pick_position, object.place_position):
 
