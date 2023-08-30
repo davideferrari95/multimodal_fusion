@@ -41,15 +41,15 @@ class ExperimentManager():
     HOME = [1.4624409675598145, -1.614187856713766, 1.8302066961871546, -1.795131345788473, -1.5152104536639612, -0.09420425096620733]
 
     # TTS Error Messages
-    OBSTACLE_DETECTED_ERROR = 'obstacle detected'
-    MOVE_TO_USER_ERROR = 'move to user'
+    OBSTACLE_DETECTED_ERROR_STRING = 'obstacle detected'
+    MOVE_TO_USER_ERROR_STRING = 'move to user'
 
     # Flags
     experiment_started, stop = False, False
+    wait_for_command, error_stop = False, False
 
     # Received Data
-    received_command, place_command = EMPTY_COMMAND, EMPTY_COMMAND
-    error_handling_command, received_error = EMPTY_COMMAND, NO_ERROR
+    error_handling_command, received_error = None, None
 
     def __init__(self) -> None:
 
@@ -79,7 +79,7 @@ class ExperimentManager():
         elif data.fused_command in [EMPTY_COMMAND, POINT_AT, PLACE_OBJECT_POINT_AT]: return
 
         # Place Object Command -> Save Place Command
-        elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.place_command = data
+        elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.error_handling_command = data
 
         # Voice-Only Commands -> Save Error Handling Command
         elif data.fused_command in [OBJECT_MOVED, USER_MOVED, USER_CANT_MOVE, REPLAN_TRAJECTORY, WAIT_FOR_COMMAND, CAN_GO, WAIT_TIME]: self.error_handling_command = data
@@ -87,8 +87,8 @@ class ExperimentManager():
     def trajectoryErrorCallback(self, data:TrajectoryError):
 
         # Save Received Error
-        self.received_error = data
-        rospy.logwarn(f"Received Error: {self.received_error}")
+        self.received_error = data.error
+        rospy.logwarn(f"Received Error: {data.error} | {data.info}")
 
     def handover(self, pick_position, place_position) -> bool:
 
@@ -106,12 +106,12 @@ class ExperimentManager():
 
         # Move 20cm Over the Object | Negative Error Handling -> Return
         if not self.robot.move_joint(pick_position_up):
-            if not self.errorHandling(MOVE_OVER_OBJECT_ERROR): return False
+            if not self.errorHandling(MOVE_OVER_OBJECT_ERROR, pick_position_up): return False
             rospy.loginfo('Move Over the Object')
 
         # Move to Object | Negative Error Handling -> Return
         if not self.robot.move_joint(pick_position):
-            if not self.errorHandling(MOVE_TO_OBJECT_ERROR): return False
+            if not self.errorHandling(MOVE_TO_OBJECT_ERROR, pick_position): return False
         rospy.loginfo('Move To the Object')
 
         # Grip Object | Negative Error Handling -> Return
@@ -122,7 +122,7 @@ class ExperimentManager():
 
         # Move 20cm Over the Object | Negative Error Handling -> Return
         if not self.robot.move_joint(pick_position_up):
-            if not self.errorHandling(MOVE_OVER_OBJECT_AFTER_ERROR): return False
+            if not self.errorHandling(MOVE_OVER_OBJECT_AFTER_ERROR, pick_position_up): return False
         rospy.loginfo('Move Over the Object')
 
         # Forward Kinematic -> Increase z + 20cm
@@ -132,12 +132,12 @@ class ExperimentManager():
 
         # Move 20cm Over the Place Position | Negative Error Handling -> Return
         if not self.robot.move_joint(place_position_up):
-            if not self.errorHandling(MOVE_OVER_PLACE_ERROR): return False
+            if not self.errorHandling(MOVE_OVER_PLACE_ERROR, place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
 
         # Move to Place Position | Negative Error Handling -> Return
         if not self.robot.move_joint(place_position):
-            if not self.errorHandling(MOVE_TO_PLACE_ERROR): return False
+            if not self.errorHandling(MOVE_TO_PLACE_ERROR, place_position): return False
         rospy.loginfo('Move To the Place Position')
 
         # Release Object | Negative Error Handling -> Return
@@ -148,101 +148,200 @@ class ExperimentManager():
 
         # Move 20cm Over the Place Position | Negative Error Handling -> Return
         if not self.robot.move_joint(place_position_up):
-            if not self.errorHandling(MOVE_OVER_PLACE_AFTER_ERROR): return False
+            if not self.errorHandling(MOVE_OVER_PLACE_AFTER_ERROR, place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
 
         # Move to Home | Negative Error Handling -> Return
         if not self.robot.move_joint(self.HOME):
-            if not self.errorHandling(MOVE_HOME_ERROR): return False
+            if not self.errorHandling(MOVE_HOME_ERROR, self.HOME): return False
         rospy.loginfo('Move To Home')
 
         return True
 
     def placeObject(self, place_area) -> bool:
 
-        """ Place Object """
+        """ Place Object in Area """
 
         # Get Area Place Position
         for area in area_list:
             if area.name == place_area: place_position = area.position
 
-        # Move to Place Position
+        # Forward Kinematic -> Increase z + 20cm
+        place_position_up: Pose() = self.robot.FK(place_position)
+        place_position_up.position.z += 0.20
+        rospy.loginfo('Forward Kinematic')
+
+        # Move 20cm Over the Place Position | Error -> Return
+        if not self.robot.move_joint(place_position_up): return False
+        rospy.loginfo('Move Over the Place Position')
+
+        # Move to Place Position | Error -> Return
         if not self.robot.move_joint(place_position): return False
         rospy.loginfo('Move To the Place Position')
 
-        # Release Object
+        # Release Object | Error -> Return
         if not self.robot.move_gripper(GRIPPER_OPEN): return False
         rospy.loginfo('Open Gripper')
         time.sleep(1)
 
-        # Move to Home
+        # Move 20cm Over the Place Position | Error -> Return
+        if not self.robot.move_joint(place_position_up): return False
+        rospy.loginfo('Move Over the Place Position')
+
+        # Move to Home | Error -> Return
         if not self.robot.move_joint(self.HOME): return False
         rospy.loginfo('Move To Home')
 
         return True
 
-    def errorHandling(self, handover_error) -> bool:
+    def errorHandling(self, handover_error, goal_position=None) -> bool:
 
         """ Error Handling """
 
         # Gripper Movement Error -> Stop Handover
         if handover_error in [OPEN_GRIPPER_ERROR, CLOSE_GRIPPER_ERROR, OPEN_GRIPPER_AFTER_ERROR]:
 
-            print('ERROR: An exception occurred during Gripper Movement')
+            rospy.logwarn('ERROR: An exception occurred during Gripper Movement')
             return False
 
         # Pick Object Movement Error -> Stop Handover
         elif handover_error in [MOVE_OVER_OBJECT_ERROR, MOVE_TO_OBJECT_ERROR, MOVE_OVER_OBJECT_AFTER_ERROR]:
 
-            print('ERROR: An exception occurred during Pick Object Movement')
+            rospy.logwarn('ERROR: An exception occurred during Pick Object Movement')
             return False
 
         # Place Object Movement Error -> Check Error Type
         elif handover_error in [MOVE_OVER_PLACE_ERROR, MOVE_TO_PLACE_ERROR, MOVE_OVER_PLACE_AFTER_ERROR]:
 
             # Obstacle Detected -> Move to User
-            if self.received_error.error == self.OBSTACLE_DETECTED_ERROR:
+            if self.received_error.error == OBSTACLE_DETECTED_ERROR:
 
-                # Move to User
-                if not self.robot.move_joint(self.HOME):
-                    print('ERROR: An exception occurred during Move to User')
+                # Publish Error Message
+                error_msg = String()
+                error_msg.data = self.OBSTACLE_DETECTED_ERROR_STRING
+                self.eventPub.publish(error_msg)
+                rospy.logwarn('ERROR: Obstacle Detected')
+
+                # Wait for Error Handling Command
+                while self.error_handling_command is None:
+                    rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
+
+                # Object Moved -> Move to Place -> Restart Handover
+                if self.error_handling_command.fused_command == OBJECT_MOVED:
+
+                    rospy.loginfo('Object Moved Command -> Retry Place Object')
+
+                    # Move to Position -> Positive Error Handling -> Continue Handover
+                    if self.robot.move_joint(goal_position): return True
+
+                    else:
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during Object Moved Error Handling')
+                        self.error_stop = True
+                        return False
+
+                # Put Object in Place Area -> Place Object -> Stop Handover
+                elif self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
+
+                    # Place Object in Area Error Handling -> Stop Handover
+                    if not self.placeObject(place_area=self.error_handling_command.area):
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling')
+                        self.error_stop = True
+
+                    # Stop Handover
                     return False
-                rospy.loginfo('Move To User')
 
-                # Move to Home
-                if not self.robot.move_joint(self.HOME):
-                    print('ERROR: An exception occurred during Move to Home')
+                elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
+
+                    # Stop Handover
+                    rospy.logwarn('WARN: Wait for Command Error Handling Received')
+                    self.wait_for_command = True
                     return False
-                rospy.loginfo('Move To Home')
-
-                # Continue Handover
-                return True
 
             # Move to User Error -> Stop Handover
-            elif self.received_error.error == self.MOVE_TO_USER_ERROR:
+            elif self.received_error.error == MOVE_TO_USER_ERROR:
 
-                print('ERROR: An exception occurred during Move to User')
-                return False
+                # Publish Error Message
+                error_msg = String()
+                error_msg.data = self.MOVE_TO_USER_ERROR_STRING
+                self.eventPub.publish(error_msg)
+                rospy.logwarn('ERROR: Move to User Error')
 
-            # Other Errors -> Stop Handover
-            else:
+                # Wait for Error Handling Command
+                while self.error_handling_command is None:
+                    rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
 
-                print('ERROR: An exception occurred during Place Object Movement')
-                return False
+                # User Moved -> Move to Place -> Restart Handover
+                if self.error_handling_command.fused_command == USER_MOVED:
 
-        # Stop Handover
-        return False
+                    rospy.loginfo('User Moved Command -> Retry Place Object')
 
-        # Continue Handover
-        return True
+                    # Move to Position -> Positive Error Handling -> Continue Handover
+                    if self.robot.move_joint(goal_position): return True
+
+                    else:
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during User Moved Error Handling')
+                        self.error_stop = True
+                        return False
+
+                # Wait Time -> Move to Place -> Restart Handover
+                elif self.error_handling_command.fused_command == WAIT_TIME:
+
+                    # Wait Time
+                    rospy.loginfo('Wait Time')
+                    print(type(self.error_handling_command.wait_time))
+                    time.sleep(30 if self.error_handling_command.wait_time is not int else self.error_handling_command.wait_time)
+
+                    # Publish TTS Message
+                    tts_msg = String()
+                    tts_msg.data = 'I restart moving to the place'
+                    self.ttsPub.publish(tts_msg)
+
+                    # Move to Position -> Positive Error Handling -> Continue Handover
+                    if self.robot.move_joint(goal_position): return True
+
+                    else:
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during Wait Time Error Handling')
+                        self.error_stop = True
+                        return False
+
+                # Put Object in Place Area -> Place Object -> Stop Handover
+                elif self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
+
+                    # Place Object in Area Error Handling -> Stop Handover
+                    if not self.placeObject(place_area=self.error_handling_command.area):
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling')
+                        self.error_stop = True
+
+                    # Stop Handover
+                    return False
+
+                elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
+
+                    # Stop Handover
+                    rospy.logwarn('WARN: Wait for Command Error Handling Received')
+                    self.wait_for_command = True
+                    return False
+
+        # Clear Error Handling Messages
+        self.error_handling_command = None
+        self.received_error = None
 
     def run(self):
 
         """ Run the Experiment """
 
         # Wait for Experiment Start
-        while not self.experiment_started: pass
-        self.received_command = EMPTY_COMMAND
+        while not self.experiment_started: rospy.loginfo_throttle(5, 'Waiting for Experiment Start')
 
         # Start Experiment
         rospy.loginfo('Start Experiment - Move to Home')
@@ -250,6 +349,34 @@ class ExperimentManager():
 
         # Handover Object
         for object in object_list:
+
+            # Break if Stop Signal Received
+            if self.error_stop: break
+
+            # Wait for Command Message
+            if self.wait_for_command:
+
+                # Wait for Command
+                while self.error_handling_command is None:
+                    rospy.loginfo_throttle(5, 'Waiting for Command')
+
+                # Put Object in Place Area -> Place Object -> Stop Handover
+                if self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
+
+                    # Place Object in Area Error Handling -> Stop Handover
+                    if not self.placeObject(place_area=self.error_handling_command.area):
+
+                        # Negative Error Handling -> Stop Handover
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling')
+                        self.error_stop = True
+                        break
+
+                else:
+
+                    # Stop Handover
+                    rospy.logerr('ERROR: Wrong Command Received')
+                    self.error_stop = True
+                    break
 
             if not self.handover(object.pick_position, object.place_position):
 
