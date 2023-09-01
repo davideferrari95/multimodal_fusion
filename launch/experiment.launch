@@ -2,11 +2,16 @@
 
 	<!-- Experiment Type Args -->
     <arg name="conversation" default="true"/>
+    <arg name="gripper_enabled" default="true"/>
 
 	<!-- Launch Conversation Experiment Node -->
-	<node if="$(arg conversation)" pkg="multimodal_fusion" type="experiment_conversation.py" name="experiment" output="screen"/>
+	<node if="$(arg conversation)" pkg="multimodal_fusion" type="experiment_conversation.py" name="experiment" output="screen">
+		<param name="gripper_enabled" value="$(arg gripper_enabled)"/>
+	</node>
 
 	<!-- Launch Experiment Node -->
-	<node unless="$(arg conversation)" pkg="multimodal_fusion" type="experiment_simple.py" name="experiment" output="screen"/>
+	<node unless="$(arg conversation)" pkg="multimodal_fusion" type="experiment_simple.py" name="experiment" output="screen">
+		<param name="gripper_enabled" value="$(arg gripper_enabled)"/>
+	</node>
 
 </launch>

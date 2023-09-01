@@ -16,7 +16,7 @@ from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicReque
 from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicRequest, GetInverseKinematicResponse
 
 # Import Command List
-from command_list import *
+from utils.command_list import *
 
 GRIPPER_OPEN = 0
 GRIPPER_CLOSE = 100
@@ -67,6 +67,9 @@ class UR10e_RTDE_Move():
 
         """ Joint Space Movement """
 
+        assert type(joint_positions) is list, f"Joint Positions must be a List | {type(joint_positions)} given | {joint_positions}"
+        assert len(joint_positions) == 6, f"Joint Positions Length must be 6 | {len(joint_positions)} given"
+
         # Destination Position (if `time_from_start` = 0 -> read velocity[0])
         pos = JointState()
         pos.position = joint_positions
@@ -90,6 +93,9 @@ class UR10e_RTDE_Move():
 
         # Wait for Trajectory Execution
         while not self.trajectory_execution_received:
+
+            # Debug Print
+            rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
 
             # Reset Trajectory Execution Flag
             self.trajectory_execution_received = False
@@ -145,11 +151,14 @@ class UR10e_RTDE_Move():
         rospy.wait_for_service('ur_rtde/getIK')
         res: GetInverseKinematicResponse = self.get_IK_srv(req)
 
-        return res.joint_position
+        return list(res.joint_position)
 
-    def move_gripper(self, position) -> bool:
+    def move_gripper(self, position, gripper_enabled=True) -> bool:
 
         """ Open-Close Gripper Function """
+
+        # Return True if Gripper is not Enabled
+        if not gripper_enabled: return True
 
         # Set Gripper Request
         req = RobotiQGripperControlRequest()
