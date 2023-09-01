@@ -78,10 +78,10 @@ class UR10e_RTDE_Move():
         self.ur10Pub.publish(pos)
 
         # Check Planning Error
-        planning_error_flag = rospy.wait_for_message('/planning_error', Bool)
+        planning_error_flag: Bool = rospy.wait_for_message('/planning_error', Bool)
 
         # Return False if Planning Error
-        if planning_error_flag:
+        if planning_error_flag.data:
 
             # Publish Planning Error -> Obstacle Detected
             msg = TrajectoryError()
@@ -115,7 +115,7 @@ class UR10e_RTDE_Move():
                 return False
 
             # Exception with Trajectory Execution
-            if not self.trajectory_executed: print("ERROR: An exception occurred during Trajectory Execution")
+            if not self.trajectory_executed: print("ERROR: An exception occurred during Trajectory Execution"); return False
             else: return True
 
     def move_cartesian(self, tcp_position:Pose) -> bool:
