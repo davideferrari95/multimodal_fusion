@@ -92,13 +92,10 @@ class UR10e_RTDE_Move():
             return False
 
         # Wait for Trajectory Execution
-        while not self.trajectory_execution_received:
+        while not self.trajectory_execution_received and not rospy.is_shutdown():
 
             # Debug Print
             rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
-
-            # Reset Trajectory Execution Flag
-            self.trajectory_execution_received = False
 
             # Check for Too Slow Error
             if self.too_slow_error:
@@ -114,9 +111,12 @@ class UR10e_RTDE_Move():
 
                 return False
 
-            # Exception with Trajectory Execution
-            if not self.trajectory_executed: print("ERROR: An exception occurred during Trajectory Execution"); return False
-            else: return True
+        # Reset Trajectory Execution Flag
+        self.trajectory_execution_received = False
+
+        # Exception with Trajectory Execution
+        if not self.trajectory_executed: print("ERROR: An exception occurred during Trajectory Execution"); return False
+        else: return True
 
     def move_cartesian(self, tcp_position:Pose) -> bool:
 
