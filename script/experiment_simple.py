@@ -11,7 +11,7 @@ from multimodal_fusion.msg import FusedCommand, TrajectoryError
 # Move Robot Utilities
 from utils.move_robot import UR10e_RTDE_Move, GRIPPER_OPEN, GRIPPER_CLOSE
 from utils.command_list import *
-from utils.object_list import object_list, area_list
+from utils.object_list import HOME, object_list, area_list
 
 """
 
@@ -38,12 +38,10 @@ Labelling:
 
 class ExperimentManager():
 
-    # Robot Positions
-    HOME = [1.4624409675598145, -1.614187856713766, 1.8302066961871546, -1.795131345788473, -1.5152104536639612, -0.09420425096620733]
-
     # TTS Error Messages
     OBSTACLE_DETECTED_ERROR_STRING = "There is an obstacle where I have to place the object"
     MOVE_TO_USER_ERROR_STRING = "I have to get there, if you don't move I'll have to slow down too much"
+    HELP_SPECIAL_BLOCK_ERROR_STRING = 'I need your help with this special block, tell me when you bring it and I release the gripper'
 
     # Flags
     experiment_started, stop = False, False
@@ -81,6 +79,9 @@ class ExperimentManager():
         # Empty or Unused Commands -> Do Nothing
         elif data.fused_command in [EMPTY_COMMAND, POINT_AT, PLACE_OBJECT_POINT_AT]: return
 
+        # CanGo Command -> Save CanGo Command
+        elif data.fused_command in [CAN_GO] and self.wait_for_command: self.error_handling_command = data
+
         # Place Object Command -> Save Place Command
         elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.error_handling_command = data
 
@@ -93,7 +94,7 @@ class ExperimentManager():
         self.received_error = data.error
         rospy.logwarn(f"Received Error: {data.error} | {data.info}")
 
-    def handover(self, pick_position, place_position) -> bool:
+    def handover(self, object_name, pick_position, place_position) -> bool:
 
         """ Handover Object """
 
@@ -102,13 +103,13 @@ class ExperimentManager():
         if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled):
             if not self.errorHandling(OPEN_GRIPPER_ERROR): return False
 
-        # Forward + Inverse Kinematic -> Increase z + 20cm
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
+        # Forward + Inverse Kinematic -> Increase z + 10cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 10cm')
         pick_position_cartesian: Pose = self.robot.FK(pick_position)
-        pick_position_cartesian.position.z += 0.20
-        pick_position_up: List[float] = self.robot.IK(pick_position_cartesian)
+        pick_position_cartesian.position.z += 0.10
+        pick_position_up: List[float] = self.robot.IK(pick_position_cartesian, pick_position)
 
-        # Move 20cm Over the Object | Negative Error Handling -> Return
+        # Move 10cm Over the Object | Negative Error Handling -> Return
         rospy.loginfo('Move Over the Object')
         if not self.robot.move_joint(pick_position_up):
             if not self.errorHandling(MOVE_OVER_OBJECT_ERROR, pick_position_up): return False
@@ -124,18 +125,18 @@ class ExperimentManager():
             if not self.errorHandling(CLOSE_GRIPPER_ERROR): return False
         rospy.sleep(1)
 
-        # Move 20cm Over the Object | Negative Error Handling -> Return
+        # Move 10cm Over the Object | Negative Error Handling -> Return
         rospy.loginfo('Move Over the Object')
         if not self.robot.move_joint(pick_position_up):
             if not self.errorHandling(MOVE_OVER_OBJECT_AFTER_ERROR, pick_position_up): return False
 
-        # Forward + Inverse Kinematic -> Increase z + 20cm
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
+        # Forward + Inverse Kinematic -> Increase z + 10cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 10cm')
         place_position_cartesian: Pose() = self.robot.FK(place_position)
-        place_position_cartesian.position.z += 0.20
-        place_position_up: List[float] = self.robot.IK(place_position_cartesian)
+        place_position_cartesian.position.z += 0.10
+        place_position_up: List[float] = self.robot.IK(place_position_cartesian, place_position)
 
-        # Move 20cm Over the Place Position | Negative Error Handling -> Return
+        # Move 10cm Over the Place Position | Negative Error Handling -> Return
         rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_ERROR, place_position_up): return False
@@ -145,21 +146,27 @@ class ExperimentManager():
         if not self.robot.move_joint(place_position):
             if not self.errorHandling(MOVE_TO_PLACE_ERROR, place_position): return False
 
+        if object_name == 'special_block':
+
+            # Collaborative Release Object Routine
+            self.collaborativeReleaseRoutine(place_position_up)
+            return True
+
         # Release Object | Negative Error Handling -> Return
         rospy.loginfo('Open Gripper')
         if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled):
             if not self.errorHandling(OPEN_GRIPPER_AFTER_ERROR): return False
         rospy.sleep(1)
 
-        # Move 20cm Over the Place Position | Negative Error Handling -> Return
+        # Move 10cm Over the Place Position | Negative Error Handling -> Return
         rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_AFTER_ERROR, place_position_up): return False
 
         # Move to Home | Negative Error Handling -> Return
         rospy.loginfo('Move To Home')
-        if not self.robot.move_joint(self.HOME):
-            if not self.errorHandling(MOVE_HOME_ERROR, self.HOME): return False
+        if not self.robot.move_joint(HOME):
+            if not self.errorHandling(MOVE_HOME_ERROR, HOME): return False
 
         return True
 
@@ -184,13 +191,13 @@ class ExperimentManager():
         if not area_found: rospy.logerr(f'Place Object Function | Place Area Not Found | Shutdown'); return False
         else: rospy.logwarn(f'Place Object Function | Place Area Found: {place_area}')
 
-        # Forward + Inverse Kinematic -> Increase z + 20cm
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
+        # Forward + Inverse Kinematic -> Increase z + 10cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 10cm')
         place_position_cartesian: Pose() = self.robot.FK(place_position)
-        place_position_cartesian.position.z += 0.20
-        place_position_up: List[float] = self.robot.IK(place_position_cartesian)
+        place_position_cartesian.position.z += 0.10
+        place_position_up: List[float] = self.robot.IK(place_position_cartesian, place_position)
 
-        # Move 20cm Over the Place Position | Error -> Return
+        # Move 10cm Over the Place Position | Error -> Return
         rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up): return False
 
@@ -203,13 +210,13 @@ class ExperimentManager():
         if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
         rospy.sleep(1)
 
-        # Move 20cm Over the Place Position | Error -> Return
+        # Move 10cm Over the Place Position | Error -> Return
         rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up): return False
 
         # Move to Home | Error -> Return
         rospy.loginfo('Move To Home')
-        if not self.robot.move_joint(self.HOME): return False
+        if not self.robot.move_joint(HOME): return False
 
         return True
 
@@ -340,6 +347,55 @@ class ExperimentManager():
         # Return Flag -> True: Continue Handover | False: Stop Handover
         return return_flag
 
+    def collaborativeReleaseRoutine(self, place_position_up):
+
+        """ Routine to Help Place the Special Block """
+
+        # Publish Error Message
+        error_msg = String()
+        error_msg.data = self.HELP_SPECIAL_BLOCK_ERROR_STRING
+        self.ttsPub.publish(error_msg)
+        rospy.logwarn('ERROR: Help Special Block Error')
+
+        # Wait for Command -> Can Go
+        self.wait_for_command = True
+
+        # Wait for Error Handling Command
+        while self.error_handling_command is None and not rospy.is_shutdown():
+            rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
+
+        # User Have the Special Block -> Open Gripper -> Stop Handover
+        if self.error_handling_command.fused_command == CAN_GO:
+
+            rospy.loginfo('Object Moved Command -> Retry Place Object')
+
+            # Clear Error Handling Messages
+            self.error_handling_command = None
+            self.wait_for_command = False
+
+            # Move to Position -> Positive Error Handling -> Continue Handover
+            # Release Object | Error -> Return
+            rospy.loginfo('Open Gripper')
+            if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
+            rospy.sleep(1)
+
+            # Move 10cm Over the Place Position | Error -> Return
+            rospy.loginfo('Move Over the Place Position')
+            if not self.robot.move_joint(place_position_up): return False
+
+            # Move to Home | Error -> Return
+            rospy.loginfo('Move To Home')
+            if not self.robot.move_joint(HOME): return False
+
+            return True
+
+        else:
+
+            # Other Errors -> Stop Handover
+            rospy.logerr(f'ERROR: An exception occurred with Incorrect Command {self.error_handling_command.fused_command} -> Shutdown')
+            self.error_stop = True
+            return False
+
     def run(self):
 
         """ Run the Experiment """
@@ -349,7 +405,7 @@ class ExperimentManager():
 
         # Start Experiment
         rospy.loginfo('Start Experiment - Move to Home')
-        self.robot.move_joint(self.HOME)
+        self.robot.move_joint(HOME)
 
         # Handover Object
         for object in object_list:
@@ -357,7 +413,7 @@ class ExperimentManager():
             # Break if Stop Signal Received
             if self.error_stop: break
 
-            if not self.handover(object.pick_position, object.place_position):
+            if not self.handover(object.name, object.pick_position, object.place_position):
 
                 # Error Handling
                 print('ERROR: An exception occurred during Handover')
