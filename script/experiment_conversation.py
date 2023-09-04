@@ -99,68 +99,68 @@ class ExperimentManager():
         """ Handover Object """
 
         # Move Gripper to Starting Position | Negative Error Handling -> Return
+        rospy.loginfo('Open Gripper')
         if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled):
             if not self.errorHandling(OPEN_GRIPPER_ERROR): return False
-        rospy.loginfo('Open Gripper')
 
         # Forward + Inverse Kinematic -> Increase z + 20cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
         pick_position_cartesian: Pose = self.robot.FK(pick_position)
         pick_position_cartesian.position.z += 0.20
         pick_position_up: List[float] = self.robot.IK(pick_position_cartesian)
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
 
         # Move 20cm Over the Object | Negative Error Handling -> Return
+        rospy.loginfo('Move Over the Object')
         if not self.robot.move_joint(pick_position_up):
             if not self.errorHandling(MOVE_OVER_OBJECT_ERROR, pick_position_up): return False
-            rospy.loginfo('Move Over the Object')
 
         # Move to Object | Negative Error Handling -> Return
+        rospy.loginfo('Move To the Object')
         if not self.robot.move_joint(pick_position):
             if not self.errorHandling(MOVE_TO_OBJECT_ERROR, pick_position): return False
-        rospy.loginfo('Move To the Object')
 
         # Grip Object | Negative Error Handling -> Return
+        rospy.loginfo('Close Gripper')
         if not self.robot.move_gripper(GRIPPER_CLOSE, self.gripper_enabled):
             if not self.errorHandling(CLOSE_GRIPPER_ERROR): return False
-        rospy.loginfo('Close Gripper')
         rospy.sleep(1)
 
         # Move 20cm Over the Object | Negative Error Handling -> Return
+        rospy.loginfo('Move Over the Object')
         if not self.robot.move_joint(pick_position_up):
             if not self.errorHandling(MOVE_OVER_OBJECT_AFTER_ERROR, pick_position_up): return False
-        rospy.loginfo('Move Over the Object')
 
         # Forward + Inverse Kinematic -> Increase z + 20cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
         place_position_cartesian: Pose() = self.robot.FK(place_position)
         place_position_cartesian.position.z += 0.20
         place_position_up: List[float] = self.robot.IK(place_position_cartesian)
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
 
         # Move 20cm Over the Place Position | Negative Error Handling -> Return
+        rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_ERROR, place_position_up): return False
-        rospy.loginfo('Move Over the Place Position')
 
         # Move to Place Position | Negative Error Handling -> Return
+        rospy.loginfo('Move To the Place Position')
         if not self.robot.move_joint(place_position):
             if not self.errorHandling(MOVE_TO_PLACE_ERROR, place_position): return False
-        rospy.loginfo('Move To the Place Position')
 
         # Release Object | Negative Error Handling -> Return
+        rospy.loginfo('Open Gripper')
         if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled):
             if not self.errorHandling(OPEN_GRIPPER_AFTER_ERROR): return False
-        rospy.loginfo('Open Gripper')
         rospy.sleep(1)
 
         # Move 20cm Over the Place Position | Negative Error Handling -> Return
+        rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_AFTER_ERROR, place_position_up): return False
-        rospy.loginfo('Move Over the Place Position')
 
         # Move to Home | Negative Error Handling -> Return
+        rospy.loginfo('Move To Home')
         if not self.robot.move_joint(self.HOME):
             if not self.errorHandling(MOVE_HOME_ERROR, self.HOME): return False
-        rospy.loginfo('Move To Home')
 
         return True
 
@@ -170,34 +170,47 @@ class ExperimentManager():
 
         # Get Area Place Position
         for area in area_list:
-            if area.name == place_area: place_position = area.position
+
+            if area.name == place_area:
+
+                # Desired Area Position Found
+                place_position = area.position
+                rospy.loginfo(f'Place Area Found: {place_area}')
+                area_found = True
+                break
+
+            else: area_found = False
+
+        # Area Not Found -> Return
+        if not area_found: rospy.logerr(f'Place Object Function | Place Area Not Found | Shutdown'); return False
+        else: rospy.logwarn(f'Place Object Function | Place Area Found: {place_area}')
 
         # Forward + Inverse Kinematic -> Increase z + 20cm
+        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
         place_position_cartesian: Pose() = self.robot.FK(place_position)
         place_position_cartesian.position.z += 0.20
         place_position_up: List[float] = self.robot.IK(place_position_cartesian)
-        rospy.loginfo('Forward Kinematic + Inverse Kinematic -> Increase z + 20cm')
 
         # Move 20cm Over the Place Position | Error -> Return
-        if not self.robot.move_joint(place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
+        if not self.robot.move_joint(place_position_up): return False
 
         # Move to Place Position | Error -> Return
-        if not self.robot.move_joint(place_position): return False
         rospy.loginfo('Move To the Place Position')
+        if not self.robot.move_joint(place_position): return False
 
         # Release Object | Error -> Return
-        if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
         rospy.loginfo('Open Gripper')
+        if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
         rospy.sleep(1)
 
         # Move 20cm Over the Place Position | Error -> Return
-        if not self.robot.move_joint(place_position_up): return False
         rospy.loginfo('Move Over the Place Position')
+        if not self.robot.move_joint(place_position_up): return False
 
         # Move to Home | Error -> Return
-        if not self.robot.move_joint(self.HOME): return False
         rospy.loginfo('Move To Home')
+        if not self.robot.move_joint(self.HOME): return False
 
         return True
 
@@ -216,6 +229,13 @@ class ExperimentManager():
         elif handover_error in [MOVE_OVER_OBJECT_ERROR, MOVE_TO_OBJECT_ERROR, MOVE_OVER_OBJECT_AFTER_ERROR]:
 
             rospy.logerr('ERROR: An exception occurred during Pick Object Movement -> Shutdown')
+            self.error_stop = True
+            return False
+
+        # Move Home Error -> Stop Handover
+        elif handover_error in [MOVE_HOME_ERROR]:
+
+            rospy.logerr('ERROR: An exception occurred during Move to Home -> Shutdown')
             self.error_stop = True
             return False
 
@@ -244,7 +264,7 @@ class ExperimentManager():
                     rospy.loginfo('Object Moved Command -> Retry Place Object')
 
                     # Move to Position -> Positive Error Handling -> Continue Handover
-                    if self.robot.move_joint(goal_position): return True
+                    if self.robot.move_joint(goal_position): return_flag = True
 
                     else:
 
@@ -266,14 +286,14 @@ class ExperimentManager():
                         self.error_stop = True
 
                     # Stop Handover
-                    return False
+                    return_flag = False
 
                 elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
 
                     # Stop Handover
                     rospy.logwarn('WARN: Wait for Command Error Handling Received')
                     self.wait_for_command = True
-                    return False
+                    return_flag = False
 
             # Move to User Error -> Stop Handover
             elif self.received_error == MOVE_TO_USER_ERROR:
@@ -294,7 +314,7 @@ class ExperimentManager():
                     rospy.loginfo('User Moved Command -> Retry Place Object')
 
                     # Move to Position -> Positive Error Handling -> Continue Handover
-                    if self.robot.move_joint(goal_position): return True
+                    if self.robot.move_joint(goal_position): return_flag = True
 
                     else:
 
@@ -317,7 +337,7 @@ class ExperimentManager():
                     self.ttsPub.publish(tts_msg)
 
                     # Move to Position -> Positive Error Handling -> Continue Handover
-                    if self.robot.move_joint(goal_position): return True
+                    if self.robot.move_joint(goal_position): return_flag = True
 
                     else:
 
@@ -339,14 +359,14 @@ class ExperimentManager():
                         self.error_stop = True
 
                     # Stop Handover
-                    return False
+                    return_flag = False
 
                 elif self.error_handling_command.fused_command == WAIT_FOR_COMMAND:
 
                     # Stop Handover
                     rospy.logwarn('WARN: Wait for Command Error Handling Received')
                     self.wait_for_command = True
-                    return False
+                    return_flag = False
 
         else:
 
@@ -358,6 +378,9 @@ class ExperimentManager():
         # Clear Error Handling Messages
         self.error_handling_command = None
         self.received_error = None
+
+        # Return Flag -> True: Continue Handover | False: Stop Handover
+        return return_flag
 
     def run(self):
 
@@ -387,6 +410,10 @@ class ExperimentManager():
 
                 # Put Object in Place Area -> Place Object -> Stop Handover
                 if self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
+
+                    # Clear Error Handling Messages
+                    self.error_handling_command = None
+                    self.received_error = None
 
                     # Place Object in Area Error Handling -> Stop Handover
                     if not self.placeObject(place_area=self.error_handling_command.area):
