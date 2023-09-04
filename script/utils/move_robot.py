@@ -8,9 +8,10 @@ from std_msgs.msg import Bool
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 from multimodal_fusion.msg import TrajectoryError
+from ur_rtde_controller.msg import CartesianPoint
 
 # Import ROS Services
-from std_srvs.srv import Trigger, TriggerRequest 
+from std_srvs.srv import Trigger, TriggerRequest
 from ur_rtde_controller.srv import RobotiQGripperControl, RobotiQGripperControlRequest
 from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicRequest, GetForwardKinematicResponse
 from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicRequest, GetInverseKinematicResponse
@@ -18,8 +19,8 @@ from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicReque
 # Import Command List
 from utils.command_list import *
 
-GRIPPER_OPEN = 0
-GRIPPER_CLOSE = 100
+GRIPPER_OPEN = 100
+GRIPPER_CLOSE = 0
 
 class UR10e_RTDE_Move():
 
@@ -32,6 +33,7 @@ class UR10e_RTDE_Move():
         # Publishers
         self.ur10Pub = rospy.Publisher('/desired_joint_pose', JointState, queue_size=1)
         self.errorPub = rospy.Publisher('/trajectory_error', TrajectoryError, queue_size=1)
+        self.cartesianPub = rospy.Publisher('/ur_rtde/controllers/cartesian_space_controller/command', CartesianPoint, queue_size=1)
 
         # Subscribers
         self.trajectory_execution_sub = rospy.Subscriber('/trajectory_execution', Bool, self.trajectory_execution_callback)
@@ -120,14 +122,42 @@ class UR10e_RTDE_Move():
 
     def move_cartesian(self, tcp_position:Pose) -> bool:
 
-        """ Cartesian Movement -> Converted in Joint Movement with IK """
+        """ Cartesian Movement """
 
-        # Call Inverse Kinematic
-        joint_position = self.IK(tcp_position)
-        rospy.loginfo('Inverse Kinematic')
+        assert type(tcp_position) is Pose, f"Joint Positions must be a Pose | {type(tcp_position)} given | {tcp_position}"
 
-        # Joint Space Movement
-        return self.move_joint(joint_position)
+        # Destination Position (if `time_from_start` = 0 -> read velocity[0])
+        pos = CartesianPoint()
+        pos.cartesian_pose = tcp_position
+        pos.velocity = 0.02
+
+        # Publish Cartesian Position
+        rospy.logwarn('Cartesian Movement')
+        self.cartesianPub.publish(pos)
+
+        # Wait for Trajectory Execution
+        while not self.trajectory_execution_received and not rospy.is_shutdown():
+
+            # Debug Print
+            rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
+
+        # Reset Trajectory Execution Flag
+        self.trajectory_execution_received = False
+
+        # Exception with Trajectory Execution
+        if not self.trajectory_executed: print("ERROR: An exception occurred during Trajectory Execution"); return False
+        else: return True
+
+    # def move_cartesian(self, tcp_position:Pose) -> bool:
+
+    #     """ Cartesian Movement -> Converted in Joint Movement with IK """
+
+    #     # Call Inverse Kinematic
+    #     joint_position = self.IK(tcp_position)
+    #     rospy.loginfo('Inverse Kinematic')
+
+    #     # Joint Space Movement
+    #     return self.move_joint(joint_position)
 
     def FK(self, joint_positions:List[float]) -> Pose:
 
@@ -141,11 +171,14 @@ class UR10e_RTDE_Move():
 
         return res.tcp_position
 
-    def IK(self, pose:Pose) -> List[float]:
+    def IK(self, pose:Pose, near_pose:List[float]=None) -> List[float]:
 
         # Set Inverse Kinematic Request
         req = GetInverseKinematicRequest()
         req.tcp_position = pose
+
+        if near_pose is not None and len(near_pose) == 6: req.near_position = near_pose
+        else: req.near_position = []
 
         # Call Inverse Kinematic
         rospy.wait_for_service('ur_rtde/getIK')
