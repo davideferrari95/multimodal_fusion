@@ -61,11 +61,11 @@ class ExperimentManager():
         self.robot = UR10e_RTDE_Move()
 
         # Publishers
-        self.ttsPub   = rospy.Publisher('/tts', String, queue_size=1)
-        self.eventPub = rospy.Publisher('/alexa_events', String, queue_size=1)
+        self.ttsPub   = rospy.Publisher('/alexa/tts', String, queue_size=1)
+        self.eventPub = rospy.Publisher('/alexa/events', String, queue_size=1)
 
         # Subscribers
-        rospy.Subscriber('/fused_command', FusedCommand, self.commandCallback)
+        rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
         rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
 
         # Load Parameters
@@ -256,6 +256,8 @@ class ExperimentManager():
                 # Put Object in Place Area -> Place Object -> Stop Handover
                 elif self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
 
+                    rospy.loginfo('Place Object Area Command -> Call Place Object Function')
+
                     # Place Object in Area Error Handling -> Stop Handover
                     if not self.placeObject(place_area=self.error_handling_command.area):
 
@@ -327,6 +329,8 @@ class ExperimentManager():
                 # Put Object in Place Area -> Place Object -> Stop Handover
                 elif self.error_handling_command.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]:
 
+                    rospy.loginfo('Place Object Area Command -> Call Place Object Function')
+
                     # Place Object in Area Error Handling -> Stop Handover
                     if not self.placeObject(place_area=self.error_handling_command.area):
 
@@ -363,11 +367,13 @@ class ExperimentManager():
         while not self.experiment_started and not rospy.is_shutdown(): rospy.loginfo_throttle(5, 'Waiting for Experiment Start')
 
         # Start Experiment
-        rospy.loginfo('Start Experiment - Move to Home')
+        rospy.logwarn('Start Experiment - Move to Home')
         self.robot.move_joint(self.HOME)
 
         # Handover Object
         for object in object_list:
+
+            rospy.logwarn(f"Handover Object: {object.name}")
 
             # Break if Stop Signal Received
             if self.error_stop: break

@@ -91,7 +91,7 @@ The robot does a pick and place task and the user do a LEGO composition.
 
 - Launch Manipulator Planner:
 
-        roslaunch manipulator_planner ur10e_planner.launch
+        roslaunch manipulator_planner ur10e_planner.launch sim:=false
 
 - Launch Trajectory Scaling:
 

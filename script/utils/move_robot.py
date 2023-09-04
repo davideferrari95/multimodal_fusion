@@ -78,7 +78,7 @@ class UR10e_RTDE_Move():
         self.ur10Pub.publish(pos)
 
         # Check Planning Error
-        planning_error_flag: Bool = rospy.wait_for_message('/planning_error', Bool)
+        planning_error_flag: Bool = rospy.wait_for_message('/planning_error', Bool, timeout=10)
 
         # Return False if Planning Error
         if planning_error_flag.data:

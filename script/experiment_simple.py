@@ -61,10 +61,10 @@ class ExperimentManager():
         self.robot = UR10e_RTDE_Move()
 
         # Publishers
-        self.ttsPub   = rospy.Publisher('/tts', String, queue_size=1)
+        self.ttsPub   = rospy.Publisher('/alexa/tts', String, queue_size=1)
 
         # Subscribers
-        rospy.Subscriber('/fused_command', FusedCommand, self.commandCallback)
+        rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
         rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
 
         # Load Parameters
