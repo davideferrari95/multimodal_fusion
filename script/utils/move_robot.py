@@ -195,7 +195,7 @@ class UR10e_RTDE_Move():
 
         # Set Gripper Request
         req = RobotiQGripperControlRequest()
-        req.position, req.speed, req.force = position, 100, 25
+        req.position, req.speed, req.force = position, 100, 100
 
         # Call Gripper Service
         rospy.wait_for_service('/ur_rtde/robotiq_gripper/command')
