@@ -98,6 +98,10 @@ The robot does a pick and place task and the user do a LEGO composition.
         roslaunch trajectory_scaling ur10e_scaling.launch optitrack:=true
         roslaunch trajectory_scaling ur10e_sim_scaling.launch
 
+- Launch VRPN Client for Optitrack (already launched in Trajectory Scaling Launchfile with `optitrack:=true`):
+
+        roslaunch vrpn_client_ros sample.launch server:=192.168.2.50
+
 - Launch Alexa (Normal or Conversation):
 
         Alexa Standard:
