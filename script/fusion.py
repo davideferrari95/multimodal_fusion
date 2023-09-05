@@ -92,12 +92,12 @@ class Fusion:
         self.robot = UR10e_RTDE_Move()
 
         # Publishers
-        self.fusionPub = rospy.Publisher('/fused_command', FusedCommand, queue_size=1)
+        self.fusionPub = rospy.Publisher('/multimodal_fusion/fused_command', FusedCommand, queue_size=1)
 
         # Subscribers
-        rospy.Subscriber('/voice_command',   VoiceCommand,    self.voiceCallback)
-        rospy.Subscriber('/gesture_command', Int32MultiArray, self.gestureCallback)
-        rospy.Subscriber('/point_area',      Int32MultiArray, self.areaCallback)
+        rospy.Subscriber('/multimodal_fusion/voice_command',   VoiceCommand,    self.voiceCallback)
+        rospy.Subscriber('/multimodal_fusion/gesture_command', Int32MultiArray, self.gestureCallback)
+        rospy.Subscriber('/multimodal_fusion/point_area',      Int32MultiArray, self.areaCallback)
 
         # Init Classifier Neural Network
         self.model = LitNeuralNet(train_percent, val_percent, test_percent, input_size, hidden_size, output_size).to(DEVICE)

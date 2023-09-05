@@ -197,10 +197,14 @@ include_directories(
 install(
   PROGRAMS
     script/fusion.py
-    script/experiment.py
+    script/experiment_conversation.py
+    script/experiment_simple.py
     script/network/dataset_creation.py
     script/network/neural_classifier_training.py
+    script/utils/command_list.py
     script/utils/move_robot.py
+    script/utils/object_list.py
+    script/utils/utils.py
   DESTINATION
   	${CATKIN_PACKAGE_PYTHON_DESTINATION}
 )
