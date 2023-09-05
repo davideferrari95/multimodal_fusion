@@ -4,7 +4,7 @@ import rospy
 from typing import List
 
 # Import ROS Messages
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from geometry_msgs.msg import Pose
 from multimodal_fusion.msg import FusedCommand, TrajectoryError
 
@@ -61,6 +61,13 @@ class ExperimentManager():
         # Publishers
         self.ttsPub   = rospy.Publisher('/alexa/tts', String, queue_size=1)
         self.eventPub = rospy.Publisher('/alexa/events', String, queue_size=1)
+
+        # Enable Obstacle Publisher
+        self.enableAllObstaclesPub    = rospy.Publisher('/manipulator_planner/enable_all_obstacles',    Bool, queue_size=1)
+        self.enableGreenObstaclePub   = rospy.Publisher('/manipulator_planner/enable_green_obstacle',   Bool, queue_size=1)
+        self.enableRedObstaclePub     = rospy.Publisher('/manipulator_planner/enable_red_obstacle',     Bool, queue_size=1)
+        self.enableYellowObstaclePub  = rospy.Publisher('/manipulator_planner/enable_yellow_obstacle',  Bool, queue_size=1)
+        self.enableSpecialObstaclePub = rospy.Publisher('/manipulator_planner/enable_special_obstacle', Bool, queue_size=1)
 
         # Subscribers
         rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
@@ -399,6 +406,9 @@ class ExperimentManager():
         self.eventPub.publish(error_msg)
         rospy.logwarn('ERROR: Help Special Block Error')
 
+        # Wait for Command -> Can Go
+        self.wait_for_command = True
+
         # Wait for Error Handling Command
         while self.error_handling_command is None and not rospy.is_shutdown():
             rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
@@ -410,6 +420,7 @@ class ExperimentManager():
 
             # Clear Error Handling Messages
             self.error_handling_command = None
+            self.wait_for_command = False
 
             # Move to Position -> Positive Error Handling -> Continue Handover
             # Release Object | Error -> Return
@@ -433,6 +444,17 @@ class ExperimentManager():
             rospy.logerr(f'ERROR: An exception occurred with Incorrect Command {self.error_handling_command.fused_command} -> Shutdown')
             self.error_stop = True
             return False
+
+    def enableObstacle(self, obstacle_name, enable=True):
+
+        # Create Bool Message
+        msg = Bool()
+        msg.data = enable
+
+        if obstacle_name == 'green_block':   self.enableGreenObstaclePub.publish(msg);   rospy.logwarn('Enable Green Obstacle')
+        if obstacle_name == 'red_block':     self.enableRedObstaclePub.publish(msg);     rospy.logwarn('Enable Red Obstacle')
+        if obstacle_name == 'yellow_block':  self.enableYellowObstaclePub.publish(msg);  rospy.logwarn('Enable Yellow Obstacle')
+        if obstacle_name == 'special_block': self.enableSpecialObstaclePub.publish(msg); rospy.logwarn('Enable Special Obstacle')
 
     def run(self):
 
@@ -486,6 +508,15 @@ class ExperimentManager():
 
                 # Error Handling
                 print('ERROR: An exception occurred during Handover')
+
+            # Enable Obstacle
+            self.enableObstacle(object.name, True)
+
+        # End of Experiment -> Deactivate All Obstacles
+        msg = Bool()
+        msg.data = False
+        rospy.logwarn('Disable All Obstacles')
+        self.enableAllObstaclesPub.publish(msg)
 
 if __name__ == '__main__':
 
