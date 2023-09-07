@@ -95,6 +95,7 @@ The robot does a pick and place task and the user do a LEGO composition.
 
 - Launch Trajectory Scaling:
 
+        source ~/.../orocos_ws/devel/setup.bash
         roslaunch trajectory_scaling ur10e_scaling.launch optitrack:=true
         roslaunch trajectory_scaling ur10e_sim_scaling.launch
 

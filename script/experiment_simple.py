@@ -420,6 +420,7 @@ class ExperimentManager():
 
         # Wait for Experiment Start
         while not self.experiment_started and not rospy.is_shutdown(): rospy.loginfo_throttle(5, 'Waiting for Experiment Start')
+        self.experiment_started = False
 
         # Start Experiment
         rospy.loginfo('Start Experiment - Move to Home')
@@ -451,4 +452,4 @@ if __name__ == '__main__':
     exp = ExperimentManager()
 
     # Run the Experiment
-    exp.run()
+    while not rospy.is_shutdown(): exp.run()
