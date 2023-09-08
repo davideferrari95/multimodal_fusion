@@ -21,6 +21,7 @@ WAIT_TIME                           = 14
 NO_ERROR                            = 100
 OBSTACLE_DETECTED_ERROR             = 101
 MOVE_TO_USER_ERROR                  = 102
+ROBOT_STOPPED_SCALING_ERROR         = 103
 
 # Handover Errors
 OPEN_GRIPPER_ERROR                  = 201

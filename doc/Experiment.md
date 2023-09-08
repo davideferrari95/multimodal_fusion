@@ -120,8 +120,8 @@ The robot does a pick and place task and the user do a LEGO composition.
 - Launch Mediapipe Gesture Recognition (+ Point-At Area):
 
         conda activate multimodal_fusion
-        roslaunch mediapipe_gesture_recognition stream_node.launch
-        roslaunch mediapipe_gesture_recognition recognition_node.launch realsense:=true
+        roslaunch mediapipe_gesture_recognition stream_node.launch realsense:=true
+        roslaunch mediapipe_gesture_recognition recognition_node.launch point_area:=true
 
 - Launch Multimodal Fusion:
 

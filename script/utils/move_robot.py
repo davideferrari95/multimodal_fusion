@@ -27,6 +27,7 @@ class UR10e_RTDE_Move():
     trajectory_execution_received = False
     trajectory_executed = False
     too_slow_error = False
+    robot_stopped_scaling_error = False
 
     def __init__(self):
 
@@ -38,6 +39,7 @@ class UR10e_RTDE_Move():
         # Subscribers
         self.trajectory_execution_sub = rospy.Subscriber('/trajectory_execution', Bool, self.trajectory_execution_callback)
         self.too_slow_error_sub = rospy.Subscriber('/too_slow_error', Bool, self.too_slow_error_callback)
+        self.stopped_scaling_error_sub = rospy.Subscriber('/stopped_scaling_error', Bool, self.stopped_scaling_error_callback)
 
         # Init Gripper Service
         self.gripper_srv = rospy.ServiceProxy('/ur_rtde/robotiq_gripper/command', RobotiQGripperControl)
@@ -64,6 +66,13 @@ class UR10e_RTDE_Move():
 
             # Set Too Slow Error Flag
             self.too_slow_error = msg.data
+
+    def stopped_scaling_error_callback(self, msg:Bool):
+
+            """ Stopped Scaling Error Callback """
+
+            # Set Stopped Scaling Error Flag
+            self.robot_stopped_scaling_error = msg.data
 
     def move_joint(self, joint_positions:List[float]) -> bool:
 
@@ -112,6 +121,17 @@ class UR10e_RTDE_Move():
                 self.too_slow_error = False
 
                 return False
+
+            elif self.robot_stopped_scaling_error:
+
+                # Publish Stopped Scaling Error
+                msg = TrajectoryError()
+                msg.error = ROBOT_STOPPED_SCALING_ERROR
+                msg.info = 'Robot Stopped due to Scaling while Moving to User'
+                self.errorPub.publish(msg)
+
+                # Reset Stopped Scaling Error
+                self.robot_stopped_scaling_error = False
 
         # Reset Trajectory Execution Flag
         self.trajectory_execution_received = False
