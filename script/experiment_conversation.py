@@ -7,6 +7,7 @@ from typing import List
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import Pose
 from multimodal_fusion.msg import FusedCommand, TrajectoryError
+from manipulator_planner.srv import PlanningParameters, PlanningParametersRequest, PlanningParametersResponse
 
 # Move Robot Utilities
 from utils.move_robot import UR10e_RTDE_Move, GRIPPER_OPEN, GRIPPER_CLOSE
@@ -42,6 +43,7 @@ class ExperimentManager():
     OBSTACLE_DETECTED_ERROR_STRING = 'obstacle detected'
     MOVE_TO_USER_ERROR_STRING = 'move to user'
     HELP_SPECIAL_BLOCK_ERROR_STRING = 'help special block'
+    ROBOT_STOPPED_SCALING_ERROR_STRING = 'robot stopped scaling'
 
     # Flags
     experiment_started, stop = False, False
@@ -73,6 +75,9 @@ class ExperimentManager():
         rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
         rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
 
+        # Set Parameters Service
+        self.set_planning_parameters_service = rospy.ServiceProxy('/manipulator_planner/set_planning_parameters', PlanningParameters)
+
         # Load Parameters
         self.gripper_enabled = rospy.get_param('/experiment/gripper_enabled', True)
 
@@ -85,13 +90,13 @@ class ExperimentManager():
         elif data.fused_command in [STOP, PAUSE]: self.stop = True; return
 
         # Empty or Unused Commands -> Do Nothing
-        elif data.fused_command in [EMPTY_COMMAND, POINT_AT, PLACE_OBJECT_POINT_AT]: return
+        elif data.fused_command in [EMPTY_COMMAND, POINT_AT]: return
 
         # CanGo Command -> Save CanGo Command
         elif data.fused_command in [CAN_GO] and self.wait_for_command: self.error_handling_command = data
 
         # Place Object Command -> Save Place Command
-        elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT]: self.error_handling_command = data
+        elif data.fused_command in [PLACE_OBJECT_GIVEN_AREA, PLACE_OBJECT_GIVEN_AREA_POINT_AT, PLACE_OBJECT_POINT_AT]: self.error_handling_command = data
 
         # Voice-Only Commands -> Save Error Handling Command
         elif data.fused_command in [OBJECT_MOVED, USER_MOVED, WAIT_FOR_COMMAND, WAIT_TIME]: self.error_handling_command = data
@@ -146,8 +151,13 @@ class ExperimentManager():
 
         # Move 10cm Over the Place Position | Negative Error Handling -> Return
         rospy.loginfo('Move Over the Place Position')
-        if not self.robot.move_joint(place_position_up):
+        if object_name != 'special_block' and not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_ERROR, place_position_up): return False
+
+        if object_name == 'special_block':
+
+            self.setPlanningParameters(velocity_factor=0.1)
+            rospy.sleep(5)
 
         # Move to Place Position | Negative Error Handling -> Return
         rospy.loginfo('Move To the Place Position')
@@ -157,7 +167,7 @@ class ExperimentManager():
         if object_name == 'special_block':
 
             # Collaborative Release Object Routine
-            self.collaborativeReleaseRoutine(place_position_up)
+            self.collaborativeReleaseRoutine()
             return True
 
         # Release Object | Negative Error Handling -> Return
@@ -182,6 +192,9 @@ class ExperimentManager():
 
         """ Place Object in Area """
 
+        # FIX: Empty Area = 'front'
+        if place_area == '': place_area = 'front'
+
         # Get Area Place Position
         for area in area_list:
 
@@ -196,7 +209,7 @@ class ExperimentManager():
             else: area_found = False
 
         # Area Not Found -> Return
-        if not area_found: rospy.logerr(f'Place Object Function | Place Area Not Found | Shutdown'); return False
+        if not area_found: rospy.logerr(f'Place Object Function | Place Area Not Found: {place_area} | Stop Experiment'); return False
         else: rospy.logwarn(f'Place Object Function | Place Area Found: {place_area}')
 
         # Forward + Inverse Kinematic -> Increase z + 10cm
@@ -235,21 +248,21 @@ class ExperimentManager():
         # Gripper Movement Error -> Stop Handover
         if handover_error in [OPEN_GRIPPER_ERROR, CLOSE_GRIPPER_ERROR, OPEN_GRIPPER_AFTER_ERROR]:
 
-            rospy.logerr('ERROR: An exception occurred during Gripper Movement -> Shutdown')
+            rospy.logerr('ERROR: An exception occurred during Gripper Movement -> Stop Experiment')
             self.error_stop = True
             return False
 
         # Pick Object Movement Error -> Stop Handover
         elif handover_error in [MOVE_OVER_OBJECT_ERROR, MOVE_TO_OBJECT_ERROR, MOVE_OVER_OBJECT_AFTER_ERROR]:
 
-            rospy.logerr('ERROR: An exception occurred during Pick Object Movement -> Shutdown')
+            rospy.logerr('ERROR: An exception occurred during Pick Object Movement -> Stop Experiment')
             self.error_stop = True
             return False
 
         # Move Home Error -> Stop Handover
         elif handover_error in [MOVE_HOME_ERROR]:
 
-            rospy.logerr('ERROR: An exception occurred during Move to Home -> Shutdown')
+            rospy.logerr('ERROR: An exception occurred during Move to Home -> Stop Experiment')
             self.error_stop = True
             return False
 
@@ -283,7 +296,7 @@ class ExperimentManager():
                     else:
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Object Moved Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during Object Moved Error Handling -> Stop Experiment')
                         self.error_stop = True
                         return False
 
@@ -296,7 +309,7 @@ class ExperimentManager():
                     if not self.placeObject(place_area=self.error_handling_command.area):
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Stop Experiment')
                         self.error_stop = True
 
                     # Stop Handover
@@ -333,7 +346,7 @@ class ExperimentManager():
                     else:
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during User Moved Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during User Moved Error Handling -> Stop Experiment')
                         self.error_stop = True
                         return False
 
@@ -356,7 +369,7 @@ class ExperimentManager():
                     else:
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Wait Time Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during Wait Time Error Handling -> Stop Experiment')
                         self.error_stop = True
                         return False
 
@@ -369,7 +382,7 @@ class ExperimentManager():
                     if not self.placeObject(place_area=self.error_handling_command.area):
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Stop Experiment')
                         self.error_stop = True
 
                     # Stop Handover
@@ -385,7 +398,7 @@ class ExperimentManager():
         else:
 
             # Other Errors -> Stop Handover
-            rospy.logerr(f'ERROR: An exception occurred with Untracked Error {handover_error} -> Shutdown')
+            rospy.logerr(f'ERROR: An exception occurred with Untracked Error {handover_error} -> Stop Experiment')
             self.error_stop = True
             return False
 
@@ -396,7 +409,7 @@ class ExperimentManager():
         # Return Flag -> True: Continue Handover | False: Stop Handover
         return return_flag
 
-    def collaborativeReleaseRoutine(self, place_position_up):
+    def collaborativeReleaseRoutine(self):
 
         """ Routine to Help Place the Special Block """
 
@@ -428,10 +441,6 @@ class ExperimentManager():
             if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
             rospy.sleep(1)
 
-            # Move 10cm Over the Place Position | Error -> Return
-            rospy.loginfo('Move Over the Place Position')
-            if not self.robot.move_joint(place_position_up): return False
-
             # Move to Home | Error -> Return
             rospy.loginfo('Move To Home')
             if not self.robot.move_joint(HOME): return False
@@ -441,7 +450,7 @@ class ExperimentManager():
         else:
 
             # Other Errors -> Stop Handover
-            rospy.logerr(f'ERROR: An exception occurred with Incorrect Command {self.error_handling_command.fused_command} -> Shutdown')
+            rospy.logerr(f'ERROR: An exception occurred with Incorrect Command {self.error_handling_command.fused_command} -> Stop Experiment')
             self.error_stop = True
             return False
 
@@ -453,8 +462,22 @@ class ExperimentManager():
 
         if obstacle_name == 'green_block':   self.enableGreenObstaclePub.publish(msg);   rospy.logwarn('Enable Green Obstacle')
         if obstacle_name == 'red_block':     self.enableRedObstaclePub.publish(msg);     rospy.logwarn('Enable Red Obstacle')
-        if obstacle_name == 'yellow_block':  self.enableYellowObstaclePub.publish(msg);  rospy.logwarn('Enable Yellow Obstacle')
-        if obstacle_name == 'special_block': self.enableSpecialObstaclePub.publish(msg); rospy.logwarn('Enable Special Obstacle')
+
+        # FIX: Obstacles Disabled
+        # if obstacle_name == 'yellow_block':  self.enableYellowObstaclePub.publish(msg);  rospy.logwarn('Enable Yellow Obstacle')
+        # if obstacle_name == 'special_block': self.enableSpecialObstaclePub.publish(msg); rospy.logwarn('Enable Special Obstacle')
+
+        # FIX: Disable All Obstacles
+        msg.data = False
+        if obstacle_name == 'yellow_block': self.enableAllObstaclesPub.publish(msg); rospy.logwarn('Disable All Obstacles')
+
+    def setPlanningParameters(self, velocity_factor, acceleration_factor=0.5):
+
+        self.set_planning_parameters_service.wait_for_service()
+        req = PlanningParametersRequest()
+        req.velocity_factor = velocity_factor
+        req.acceleration_factor = acceleration_factor
+        self.set_planning_parameters_service.call(req)
 
     def run(self):
 
@@ -462,7 +485,6 @@ class ExperimentManager():
 
         # Wait for Experiment Start
         while not self.experiment_started and not rospy.is_shutdown(): rospy.loginfo_throttle(5, 'Waiting for Experiment Start')
-        self.experiment_started = False
 
         # Start Experiment
         rospy.logwarn('Start Experiment - Move to Home')
@@ -494,14 +516,14 @@ class ExperimentManager():
                     if not self.placeObject(place_area=self.error_handling_command.area):
 
                         # Negative Error Handling -> Stop Handover
-                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Shutdown')
+                        rospy.logerr('ERROR: An exception occurred during Place Object in Area Error Handling -> Stop Experiment')
                         self.error_stop = True
                         break
 
                 else:
 
                     # Stop Handover
-                    rospy.logerr('ERROR: Wrong Command Received -> Shutdown')
+                    rospy.logerr('ERROR: Wrong Command Received -> Stop Experiment')
                     self.error_stop = True
                     break
 
@@ -518,6 +540,13 @@ class ExperimentManager():
         msg.data = False
         rospy.logwarn('Disable All Obstacles')
         self.enableAllObstaclesPub.publish(msg)
+
+        # Call Set Planning Parameters Service -> Change Planning Velocity
+        self.setPlanningParameters(velocity_factor=0.2)
+
+        # Reset Flags
+        self.experiment_started = False
+        self.error_stop = False
 
 if __name__ == '__main__':
 
