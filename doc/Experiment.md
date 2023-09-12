@@ -96,8 +96,8 @@ The robot does a pick and place task and the user do a LEGO composition.
 - Launch Trajectory Scaling:
 
         source ~/.../orocos_ws/devel/setup.bash
-        roslaunch trajectory_scaling ur10e_scaling.launch optitrack:=true
-        roslaunch trajectory_scaling ur10e_sim_scaling.launch
+        roslaunch trajectory_scaling ur10e_scaling.launch optitrack:=true human_radius:=0.20
+        roslaunch trajectory_scaling ur10e_sim_scaling.launch human_radius:=0.20
 
 - Launch VRPN Client for Optitrack (already launched in Trajectory Scaling Launchfile with `optitrack:=true`):
 
@@ -120,15 +120,16 @@ The robot does a pick and place task and the user do a LEGO composition.
 - Launch Mediapipe Gesture Recognition (+ Point-At Area):
 
         conda activate multimodal_fusion
-        roslaunch mediapipe_gesture_recognition stream_node.launch
-        roslaunch mediapipe_gesture_recognition recognition_node.launch realsense:=true
+        roslaunch mediapipe_gesture_recognition stream_node.launch realsense:=true
+        roslaunch mediapipe_gesture_recognition recognition_node.launch point_area:=true
 
 - Launch Multimodal Fusion:
 
         conda activate multimodal_fusion
         roslaunch multimodal_fusion multimodal_fusion.launch
 
-- Launch the Experiment (Normal or Conversation):
+- Launch the Experiment:
+  Normal → `conversation:=false` | Conversation → `conversation:=true`
 
         conda activate multimodal_fusion
-        roslaunch multimodal_fusion experiment.launch conversation:=true enable_gripper:=true
+        roslaunch multimodal_fusion experiment.launch enable_gripper:=true conversation:=true
