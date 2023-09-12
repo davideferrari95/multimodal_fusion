@@ -12,7 +12,7 @@ from manipulator_planner.srv import PlanningParameters, PlanningParametersReques
 # Move Robot Utilities
 from utils.move_robot import UR10e_RTDE_Move, GRIPPER_OPEN, GRIPPER_CLOSE
 from utils.command_list import *
-from utils.object_list import HOME, SPECIAL_PLACE, object_list, area_list
+from utils.object_list import HOME, SPECIAL_PLACE, WAIT_POSITION, object_list, area_list
 
 """
 
@@ -71,6 +71,10 @@ class ExperimentManager():
         self.enableYellowObstaclePub  = rospy.Publisher('/manipulator_planner/enable_yellow_obstacle',  Bool, queue_size=1)
         self.enableSpecialObstaclePub = rospy.Publisher('/manipulator_planner/enable_special_obstacle', Bool, queue_size=1)
 
+        # Stop Trajectory Publisher
+        self.stopTrajectoryPub = rospy.Publisher('/trajectory_scaling/stop_trajectory', Bool, queue_size=1)
+        self.stopSimulationPub = rospy.Publisher('/simulation_scaling/stop', Bool, queue_size=1)
+
         # Subscribers
         rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
         rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
@@ -110,6 +114,9 @@ class ExperimentManager():
     def handover(self, object_name, pick_position, place_position) -> bool:
 
         """ Handover Object """
+
+        # Normal Velocity
+        self.setPlanningParameters(velocity_factor=0.2)
 
         # Move Gripper to Starting Position | Negative Error Handling -> Return
         rospy.loginfo('Open Gripper')
@@ -339,6 +346,10 @@ class ExperimentManager():
                 self.eventPub.publish(error_msg)
                 rospy.logwarn('ERROR: Move to User Error')
 
+                # Move to Wait Position
+                self.stopTrajectoryPub.publish(Bool())
+                self.robot.move_joint(WAIT_POSITION, forced=True)
+
                 # Wait for Error Handling Command
                 while self.error_handling_command is None and not rospy.is_shutdown():
                     rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
@@ -449,6 +460,9 @@ class ExperimentManager():
             if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
             rospy.sleep(1)
 
+            # Normal Velocity
+            self.setPlanningParameters(velocity_factor=0.2)
+
             # Move to Home | Error -> Return
             rospy.loginfo('Move To Home')
             if not self.robot.move_joint(HOME): return False
@@ -487,12 +501,21 @@ class ExperimentManager():
         req.acceleration_factor = acceleration_factor
         self.set_planning_parameters_service.call(req)
 
+    def stopSimulationScaling(self, data):
+
+        msg = Bool()
+        msg.data = data
+        self.stopSimulationPub.publish(msg)
+
     def run(self):
 
         """ Run the Experiment """
 
         # Wait for Experiment Start
         while not self.experiment_started and not rospy.is_shutdown(): rospy.loginfo_throttle(5, 'Waiting for Experiment Start')
+
+        # Stop Simulation Scaling
+        self.stopSimulationScaling(True)
 
         # Start Experiment
         rospy.logwarn('Start Experiment - Move to Home')
@@ -502,6 +525,9 @@ class ExperimentManager():
         for object in object_list:
 
             rospy.logwarn(f"Handover Object: {object.name}")
+
+            # `special_block` -> Start Simulation Scaling
+            if object.name == 'special_block': self.stopSimulationScaling(False)
 
             # Break if Stop Signal Received
             if self.error_stop: break

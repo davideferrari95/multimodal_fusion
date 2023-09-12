@@ -12,7 +12,7 @@ from manipulator_planner.srv import PlanningParameters, PlanningParametersReques
 # Move Robot Utilities
 from utils.move_robot import UR10e_RTDE_Move, GRIPPER_OPEN, GRIPPER_CLOSE
 from utils.command_list import *
-from utils.object_list import HOME, SPECIAL_PLACE, object_list, area_list
+from utils.object_list import HOME, SPECIAL_PLACE, WAIT_POSITION, object_list, area_list
 
 """
 
@@ -70,6 +70,9 @@ class ExperimentManager():
         self.enableYellowObstaclePub  = rospy.Publisher('/manipulator_planner/enable_yellow_obstacle',  Bool, queue_size=1)
         self.enableSpecialObstaclePub = rospy.Publisher('/manipulator_planner/enable_special_obstacle', Bool, queue_size=1)
 
+        # Stop Trajectory Publisher
+        self.stopTrajectoryPub = rospy.Publisher('/trajectory_scaling/stop_trajectory', Bool, queue_size=1)
+
         # Subscribers
         rospy.Subscriber('/multimodal_fusion/fused_command', FusedCommand, self.commandCallback)
         rospy.Subscriber('/trajectory_error', TrajectoryError, self.trajectoryErrorCallback)
@@ -109,6 +112,9 @@ class ExperimentManager():
     def handover(self, object_name, pick_position, place_position) -> bool:
 
         """ Handover Object """
+
+        # Normal Velocity
+        self.setPlanningParameters(velocity_factor=0.2)
 
         # Move Gripper to Starting Position | Negative Error Handling -> Return
         rospy.loginfo('Open Gripper')
@@ -153,6 +159,11 @@ class ExperimentManager():
         if object_name != 'special_block' and not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_ERROR, object_name, place_position_up): return False
 
+        if object_name == 'special_block':
+
+            self.setPlanningParameters(velocity_factor=0.1)
+            rospy.sleep(5)
+
         # Move to Place Position | Negative Error Handling -> Return
         rospy.loginfo('Move To the Place Position')
         if not self.robot.move_joint(place_position):
@@ -174,6 +185,9 @@ class ExperimentManager():
         rospy.loginfo('Move Over the Place Position')
         if not self.robot.move_joint(place_position_up):
             if not self.errorHandling(MOVE_OVER_PLACE_AFTER_ERROR, object_name, place_position_up): return False
+
+        # Normal Velocity
+        self.setPlanningParameters(velocity_factor=0.2)
 
         # Move to Home | Negative Error Handling -> Return
         rospy.loginfo('Move To Home')
@@ -324,6 +338,10 @@ class ExperimentManager():
                 self.ttsPub.publish(error_msg)
                 rospy.logwarn('ERROR: Move to User Error')
 
+                # Move to Wait Position
+                self.stopTrajectoryPub.publish(Bool())
+                self.robot.move_joint(WAIT_POSITION, forced=True)
+
                 # Wait for Error Handling Command
                 while self.error_handling_command is None and not rospy.is_shutdown():
                     rospy.loginfo_throttle(5, 'Waiting for Error Handling Command')
@@ -401,6 +419,9 @@ class ExperimentManager():
             rospy.loginfo('Open Gripper')
             if not self.robot.move_gripper(GRIPPER_OPEN, self.gripper_enabled): return False
             rospy.sleep(1)
+
+            # Normal Velocity
+            self.setPlanningParameters(velocity_factor=0.2)
 
             # Move to Home | Error -> Return
             rospy.loginfo('Move To Home')

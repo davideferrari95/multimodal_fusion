@@ -74,12 +74,13 @@ class UR10e_RTDE_Move():
             # Set Stopped Scaling Error Flag
             self.robot_stopped_scaling_error = msg.data
 
-    def move_joint(self, joint_positions:List[float]) -> bool:
+    def move_joint(self, joint_positions:List[float], forced=False) -> bool:
 
         """ Joint Space Movement """
 
         assert type(joint_positions) is list, f"Joint Positions must be a List | {type(joint_positions)} given | {joint_positions}"
         assert len(joint_positions) == 6, f"Joint Positions Length must be 6 | {len(joint_positions)} given"
+        self.trajectory_execution_received = False
 
         # Destination Position (if `time_from_start` = 0 -> read velocity[0])
         pos = JointState()
@@ -92,7 +93,7 @@ class UR10e_RTDE_Move():
         planning_error_flag: Bool = rospy.wait_for_message('/planning_error', Bool, timeout=10)
 
         # Return False if Planning Error
-        if planning_error_flag.data:
+        if not forced and planning_error_flag.data:
 
             # Publish Planning Error -> Obstacle Detected
             msg = TrajectoryError()
@@ -109,7 +110,7 @@ class UR10e_RTDE_Move():
             rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
 
             # Check for Too Slow Error
-            if self.too_slow_error:
+            if not forced and self.too_slow_error:
 
                 # Publish Too Slow Error -> Move To User Error
                 msg = TrajectoryError()
@@ -122,7 +123,7 @@ class UR10e_RTDE_Move():
 
                 return False
 
-            elif self.robot_stopped_scaling_error:
+            elif not forced and self.robot_stopped_scaling_error:
 
                 # Publish Stopped Scaling Error
                 msg = TrajectoryError()
